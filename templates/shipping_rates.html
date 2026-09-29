@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Shipping Rates | parkbey{% endblock %}
+
+{% block content %}
+<h2>Shipping Rates (Price List)</h2>
+
+<div class="d-flex justify-content-between mb-3">
+  <span></span>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadRateModal">
+    <i class="fas fa-file-upload"></i> + Upload / Update Rate Card
+  </button>
+</div>
+
+<div class="orders-box">
+  <div class="table-responsive">
+    <table class="pod-table table table-striped">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th>Carrier</th>
+          <th>Weight (lb)</th>
+          <th>Zone 1</th>
+          <th>Zone 2</th>
+          <th>Zone 3</th>
+          <th>Zone 4</th>
+          <th>Zone 5</th>
+          <th>Zone 6</th>
+          <th>Zone 7</th>
+          <th>Zone 8</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rate in rates %}
+        <tr>
+          <td>{{ rate.username }}</td>
+          <th>{{ rate.carrier }}</th>
+          <td>{{ rate.weight_lb }} lb</td>
+          <td>${{ rate.zone_1 }}</td>
+          <td>${{ rate.zone_2 }}</td>
+          <td>${{ rate.zone_3 }}</td>
+          <td>${{ rate.zone_4 }}</td>
+          <td>${{ rate.zone_5 }}</td>
+          <td>${{ rate.zone_6 }}</td>
+          <td>${{ rate.zone_7 }}</td>
+          <td>${{ rate.zone_8 }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center">Henüz fiyat kaydı bulunamadı. Lütfen Excel yükleyin.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="uploadRateModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('upload_rates') }}" method="POST" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h5 class="modal-title">Upload Rate Card (Excel)</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+
+          <div class="form-row mb-3">
+            <label class="form-label">Select Client (Müşteri Seçin)</label>
+            <select name="client_id" class="form-select" required>
+              <option value="" selected disabled>Lütfen bir müşteri seçin...</option>
+              {% for client in clients %}
+                <option value="{{ client.id }}">{{ client.username }}</option>
+              {% endfor %}
+            </select>
+            <small class="text-muted">Yüklenecek fiyatlar bu kullanıcıya tanımlanacaktır.</small>
+          </div>
+
+          <div class="form-row mb-3">
+            <label class="form-label">Select Excel File</label>
+            <input type="file" name="file" class="form-control" accept=".xlsx, .xls" required>
+            <small class="text-muted">Dosyanız 'Weight', 'Zone 1' vb. sütunlarını içermelidir.</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Start Upload & Process</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

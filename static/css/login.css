@@ -1,0 +1,142 @@
+:root {
+  --color-primary: #0F172A;
+  --color-accent: #3B82F6;
+  --color-bg-main: #F8FAFC;
+  --color-bg-card: #E5E7EB;
+  --color-text-primary: #1F2933;
+  --color-text-secondary: #6B7280;
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  background-color: var(--color-bg-main);
+  color: var(--color-text-primary);
+}
+
+/* Page Layout */
+.login-page {
+  flex: 1; /* footer dışındaki tüm alan */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Card */
+.login-card {
+  background-color: var(--color-bg-card);
+  padding: 40px;
+  width: 100%;
+  max-width: 420px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Headings */
+.login-card h1 {
+  margin: 0 0 8px;
+}
+
+.login-card p {
+  margin-bottom: 32px;
+  color: var(--color-text-secondary);
+}
+
+/* Form */
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid #cbd5e1;
+  font-size: 14px;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* Button */
+.btn-primary {
+  width: 100%;
+  margin-top: 8px;
+  background-color: var(--color-accent);
+  color: #ffffff;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background-color: #2563eb;
+}
+
+/* Footer */
+.login-footer {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.login-footer a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.login-footer span {
+  margin: 0 8px;
+  color: #9ca3af;
+}
+
+.footer-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.footer-right {
+  margin-left: auto;
+}
+
+.footer-right a {
+  color: white;
+  text-decoration: none;
+}
+
+.footer-right a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .footer-container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .footer-right {
+    margin-left: 0;
+  }
+}

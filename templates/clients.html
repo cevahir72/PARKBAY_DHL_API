@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Clients | parkbey{% endblock %}
+
+{% block content %}
+<h2>Client Listesi</h2>
+
+<div class="d-flex justify-content-between mb-3">
+  <span></span>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addClientModal">
+    + Add New Client
+  </button>
+</div>
+
+<div class="orders-box">
+  <div class="table-responsive">
+    <table class="pod-table table table-striped">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Reference Code</th>
+          <th>Com Fee ($)</th>
+          <th>Rate Limit</th>
+          <th>Token</th>
+          <th>Token Expiry</th>
+          <th>Status</th>
+          <th>Is Test</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for client in clients %}
+        <tr>
+          <td>{{ client.id }}</td>
+          <td>{{ client.username }}</td>
+          <td>{{ client.reference_code }}</td>
+          <td>{{ client.com_fee }}</td>
+          <td>{{ client.rate_limit }}</td>
+          <td>{{ client.token[:8] }}......</td>
+          <td>
+              {% if client.token_expiry %}
+                {{ client.token_expiry | int | datetime_from_timestamp }}
+              {% else %}
+                N/A
+              {% endif %}
+            </td>
+          <td>{{ 'Active' if client.is_active else 'Inactive' }}</td>
+          <td>{{ 'True' if client.is_test else 'False' }}</td>
+          <td>
+            <button class="btn btn-secondary btn-sm" data-bs-toggle="modal"
+                    data-bs-target="#editClientModal{{ client.id }}">Edit</button>
+          </td>
+        </tr>
+
+        <!-- Edit Modal -->
+        <div class="modal fade" id="editClientModal{{ client.id }}" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <form action="{{ url_for('admin_edit_client', client_id=client.id) }}" method="POST">
+                <div class="modal-header">
+                  <h5 class="modal-title">Edit Client: {{ client.username }}</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="form-row">
+                    <label>Username</label>
+                    <input type="text" name="username" value="{{ client.username }}" required>
+                  </div>
+                  <div class="form-row">
+                    <label>Password (leave blank to keep)</label>
+                    <input type="password" name="password">
+                  </div>
+                  <div class="form-row">
+                    <label>Com Fee ($)</label>
+                    <input type="number" name="com_fee" step="0.01" value="{{ client.com_fee }}" required>
+                  </div>
+                  <div class="form-row">
+                    <label>Rate Limit</label>
+                    <input type="number" name="rate_limit" value="{{ client.rate_limit }}" required>
+                  </div>
+                  <div class="form-row">
+                    <label>Status</label>
+                    <select name="is_active">
+                      <option value="1" {% if client.is_active %}selected{% endif %}>Active</option>
+                      <option value="0" {% if not client.is_active %}selected{% endif %}>Inactive</option>
+                    </select>
+                  </div>
+                  <div class="form-row">
+                    <label>Is Test</label>
+                    <select name="is_active">
+                      <option value="1" {% if client.is_test %}selected{% endif %}>True</option>
+                      <option value="0" {% if not client.is_test %}selected{% endif %}>False</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="submit" class="btn btn-primary">Save Changes</button>
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add Client Modal -->
+<div class="modal fade" id="addClientModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('admin_add_client') }}" method="POST">
+        <div class="modal-header">
+          <h5 class="modal-title">Add New Client</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <label>Username</label>
+            <input type="text" name="username" required>
+          </div>
+          <div class="form-row">
+            <label>Password</label>
+            <input type="password" name="password" required>
+          </div>
+          <div class="form-row">
+            <label>Reference Code</label>
+            <input type="text" name="reference_code" required>
+          </div>
+          <div class="form-row">
+            <label>Com Fee ($)</label>
+            <input type="number" name="com_fee" step="0.01" value="0.00" required>
+          </div>
+          <div class="form-row">
+            <label>Rate Limit</label>
+            <input type="number" name="rate_limit" value="5" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Create Client</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

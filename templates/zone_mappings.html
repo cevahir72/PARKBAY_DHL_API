@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Zone Mappings | parkbey{% endblock %}
+
+{% block content %}
+<h2>Zone Mappings (Locations)</h2>
+
+<div class="d-flex justify-content-between mb-3">
+  <span></span>
+  <button class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#uploadZoneModal">
+    <i class="fas fa-map-marked-alt"></i> + Import New Zone CSV or Excel
+  </button>
+</div>
+
+<div class="orders-box">
+  <div class="table-responsive">
+    <table class="pod-table table table-striped">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Carrier</th>
+          <th>From Zip (Origin)</th>
+          <th>To Zip Start</th>
+          <th>To Zip End</th>
+          <th>Zone</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for zone in zones %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ zone.carrier }}</td>
+          <td><strong>{{ zone.from_zip }}</strong></td>
+          <td>{{ zone.to_zip_start }}</td>
+          <td>{{ zone.to_zip_end }}</td>
+          <td>{{ zone.zone }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted">
+            Henüz Zone verisi yüklenmemiş. Lütfen sağ üstteki butondan CSV yükleyin.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="uploadZoneModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('upload_zones') }}" method="POST" enctype="multipart/form-data">
+        <div class="modal-header">
+          <h5 class="modal-title">Import Zone CSV or Excel</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Sistem, dosya içindeki <strong>from_post_code_district</strong> sütununu otomatik algılayacaktır.</p>
+          <div class="form-row mb-3">
+            <label>Select CSV File</label>
+            <input type="file" name="file" class="form-control" accept=".csv,.xlsx,.xls" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-dark">Start Intelligent Import</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
