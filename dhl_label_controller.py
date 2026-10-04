@@ -281,6 +281,9 @@ def dhl_create_label():
 
                 target_product.get("rate").pop("rateComponents", None)
 
+                # Orijinal DHL fiyatını kaydet (amz_cost için)
+                dhl_orijinal_rate = round(total_charge, 2)
+
                 response_value = str(target_product.get("rate"))
 
                 # Yanıt olarak sadece filtrelediğimiz ürünü döndürüyoruz
