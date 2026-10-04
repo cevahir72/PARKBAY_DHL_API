@@ -1,7 +1,7 @@
 
 from model import ZoneMapping, ShippingRate
 
-def calculate_shipping_cost(client_id, from_zip, to_zip, weight, carrier='AMZ'):
+def calculate_shipping_cost(client_id, from_zip, to_zip, weight, carrier='AMZ', service='EXP'):
     """
     Kargo maliyetini hesaplar.
     """
@@ -42,11 +42,16 @@ def calculate_shipping_cost(client_id, from_zip, to_zip, weight, carrier='AMZ'):
     zone_number = zone_mapping.zone # Örn: 5
 
     # 4. Rate (Fiyat) Bulma
-    rate_entry = ShippingRate.query.filter_by(
-        client_id=client_id,
-        weight_lb=calc_weight,
-        carrier=carrier
-    ).first()
+    filter_kwargs = {
+        "client_id": client_id,
+        "weight_lb": calc_weight,
+        "carrier": carrier
+    }
+    
+    if service:
+        filter_kwargs["services"] = service 
+
+    rate_entry = ShippingRate.query.filter_by(**filter_kwargs).first()
 
     if not rate_entry:
         return None, f"{calc_weight} lb için fiyat tanımlanmamış."

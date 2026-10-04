@@ -99,6 +99,9 @@ def dhl_rate_label():
         ]}), 400
 
     dhl_payload = dhl_request_helper(data, client.reference_code, "rate")
+        
+    # İstekten servis tipini alıyoruz (Varsayılan GND)
+    ordered_product_id = data.get("orderedProductId", "EXP")
 
     #mapped_rate, mapped_message = 0,""
     mapped_rate, mapped_message = calculate_shipping_cost(
@@ -106,7 +109,8 @@ def dhl_rate_label():
         data["shipFrom"]["postalCode"],
         data["shipTo"]["postalCode"],
         data["packages"][0]["weight"]["value"],
-        'DHL'
+        'DHL',
+        service=ordered_product_id
     )
     if not mapped_rate:
         return jsonify({"errors": [
@@ -118,7 +122,7 @@ def dhl_rate_label():
         ]}), 400
 
     is_test_label = data.get("isTestLabel", False)
-
+    
     # DHL Rate endpoint çağrısı (shipping/v4/products)
     status_code, response_data = dhl_request(
         endpoint="shipping/v4/products",
@@ -210,6 +214,13 @@ def dhl_create_label():
     rate_payload = dhl_request_helper(data, client.reference_code, "rate")
     is_test_label = data.get("isTestLabel", False)
 
+    # 🔍 DEBUG: rate_payload'ı konsola yazdır
+    print("=" * 60)
+    print("DHL PAYLOAD (create - rate call):")
+    import json
+    print(json.dumps(rate_payload, indent=2, ensure_ascii=False, default=str))
+    print("=" * 60)
+
     #mapped_rate, mapped_message = 0,""
     mapped_rate, mapped_message = calculate_shipping_cost(
         client.id,
@@ -241,8 +252,17 @@ def dhl_create_label():
         if rate_status_code == 200:
             products = rate_response_data.get("products", [])
             if products:
-                first_product = products[0]
-                total_charge = first_product.get("rate", {}).get("amount")
+                # first_product = products[0]
+                # İstediğimiz servisi belirliyoruz (GND veya EXP)
+                ordered_product_id = data.get("orderedProductId", "EXP")
+                # 1. Dönen listede aradığımız servisi bul (Index sırasından bağımsız olarak)
+                target_product = next((p for p in products if p.get("productId") == ordered_product_id), None)
+            
+                # 2. Eğer aranan servis listede yoksa, sistem çökmesin diye fallback olarak ilkini al
+                if not target_product:
+                    target_product = products[0]
+                   
+                total_charge = target_product.get("rate", {}).get("amount")
 
                 if total_charge is not None:
                     total_charge = float(total_charge)
@@ -253,17 +273,18 @@ def dhl_create_label():
                     mapped_rate += float(client.com_fee)
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
+                    # -----------------------------------------------------
+                    # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
+                    target_product["rate"]["amount"] = mapped_rate
+                    # create_label'da orijinal fiyatı saklıyordunuz:
+                    # dhl_orijinal_rate = round(total_charge, 2)
 
-                    dhl_orijinal_rate = round(total_charge, 2)
+                target_product.get("rate").pop("rateComponents", None)
 
-                first_product.get("rate").pop("rateComponents", None)
+                response_value = str(target_product.get("rate"))
 
-
-
-                response_value = str(first_product.get("rate"))
-
-                # Sadece istenen ilk ürün objesini yanıt olarak belirliyoruz
-                response_to_return = first_product
+                # Yanıt olarak sadece filtrelediğimiz ürünü döndürüyoruz
+                response_to_return = target_product
         else:
             response_value = str(rate_response_data)
 
@@ -283,6 +304,13 @@ def dhl_create_label():
 
 
     dhl_payload = dhl_request_helper(data, client.reference_code, "create")
+
+    # 🔍 DEBUG: create payload'ı konsola yazdır
+    print("=" * 60)
+    print("DHL PAYLOAD (create - label call):")
+    import json
+    print(json.dumps(dhl_payload, indent=2, ensure_ascii=False, default=str))
+    print("=" * 60)
 
     # DHL create label endpoint çağrısı (shipping/v4/label?format=PNG)
     status_code, response_data = dhl_request(

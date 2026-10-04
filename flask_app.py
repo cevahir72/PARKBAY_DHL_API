@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_file, g
 from functools import wraps
 from flask_login import current_user, login_required, login_user, LoginManager, logout_user, UserMixin
+from flask_migrate import Migrate
 import requests
 from datetime import datetime
 from model import db, Client, RequestLog, login_manager
@@ -11,6 +12,7 @@ app = Flask(__name__)
 
 app.config.from_object('config.Config')
 db.init_app(app)
+migrate = Migrate(app, db)
 
 
 with app.app_context():
@@ -154,3 +156,7 @@ from label_controller import *
 from rate_controller import *
 
 from dhl_label_controller import *
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)

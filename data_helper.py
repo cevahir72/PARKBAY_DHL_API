@@ -165,9 +165,9 @@ def request_helper(client_json, client_id, r_type):
     return payload
 
 def dhl_request_helper(client_json, client_id, r_type):
-    pickup_dict = {"75081-1955":"5410014","75243-5485":"5410429","77407-9012": "5410448","75006-2527":"5411053"}
-    # ODF 
-    distributionCenter = {"75081-1955":"USDFW1","75243-5485":"USDFW1","77407-9012": "USIAH1","75006-2527":"USDFW1"}
+    # Pickup ve Distribution Center mapping - 5-digit ZIP codes kullanılıyor
+    pickup_dict = {"75081": "5410014", "75243": "5410429", "77407": "5410448", "75006": "5411053"}
+    distributionCenter = {"75081": "USDFW1", "75243": "USDFW1", "77407": "USIAH1", "75006": "USDFW1"}
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}"
 
@@ -182,7 +182,7 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(ship_to, "country", client_json.get("shipTo", {}).get("countryCode"))
     add_if(ship_to, "postalCode", client_json.get("shipTo", {}).get("postalCode"))
     add_if(ship_to, "email", client_json.get("shipTo", {}).get("email"))
-    add_if(ship_to, "phoneNumber", client_json.get("shipTo", {}).get("phoneNumber"))
+    # phoneNumber DHL API'de consigneeAddress için geçerli DEĞİL - kaldırıldı
     add_if(payload, "consigneeAddress", ship_to)
     ship_from = {}
     add_if(ship_from, "name", client_json.get("shipFrom", {}).get("name"))
@@ -196,11 +196,16 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(ship_from, "email", client_json.get("shipFrom", {}).get("email"))
     add_if(ship_from, "phoneNumber", client_json.get("shipFrom", {}).get("phoneNumber"))
     add_if(payload, "returnAddress", ship_from)
-
-    add_if(payload, "pickup", pickup_dict.get(ship_from.get("postalCode")))
-    add_if(payload, "orderedProductId", "GND")
-    #Expedited için bu satırın değişmesi lazım
-    add_if(payload, "distributionCenter", distributionCenter.get(ship_from.get("postalCode")))
+    
+    # 5-digit ZIP code al (75243-5485 -> 75243)
+    from_zip5 = str(client_json.get("shipFrom", {}).get("postalCode", "")).split("-")[0]
+    add_if(payload, "pickup", pickup_dict.get(from_zip5))
+    
+    # Ground için GND, Expedited için EXP. İstekte yoksa varsayılan EXP.
+    ordered_product_id = client_json.get("orderedProductId", "EXP")
+    add_if(payload, "orderedProductId", ordered_product_id)
+    
+    add_if(payload, "distributionCenter", distributionCenter.get(from_zip5))
     add_if(payload, "shipperInstruction", client_json.get("shipperInstruction"))
 
     for package in client_json.get("packages", []):
