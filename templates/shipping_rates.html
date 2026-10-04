@@ -19,6 +19,7 @@
         <tr>
           <th>Client</th>
           <th>Carrier</th>
+          <th>Service</th>
           <th>Weight (lb)</th>
           <th>Zone 1</th>
           <th>Zone 2</th>
@@ -34,7 +35,8 @@
         {% for rate in rates %}
         <tr>
           <td>{{ rate.username }}</td>
-          <th>{{ rate.carrier }}</th>
+          <td>{{ rate.carrier }}</td>
+          <td>{{ rate.services or '-' }}</td>
           <td>{{ rate.weight_lb }} lb</td>
           <td>${{ rate.zone_1 }}</td>
           <td>${{ rate.zone_2 }}</td>
@@ -47,7 +49,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="10" class="text-center">Henüz fiyat kaydı bulunamadı. Lütfen Excel yükleyin.</td>
+          <td colspan="11" class="text-center">Henüz fiyat kaydı bulunamadı. Lütfen Excel yükleyin.</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -145,6 +145,7 @@ class ShippingRate(db.Model):
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False, index=True) # Hangi kullanıcıya ait?
     weight_lb = db.Column(db.Numeric(precision=4, scale=1), nullable=False, index=True)
     carrier = db.Column(db.String(20), nullable=False)
+    services = db.Column(db.String(20), nullable=True)  # Servis tipi (örn: Ground, Priority, Express)
     # Komisyon dahil net fiyatlar
     zone_1 = db.Column(db.Numeric(precision=10, scale=2), default=0.00)
     zone_2 = db.Column(db.Numeric(precision=10, scale=2), default=0.00)
@@ -156,7 +157,7 @@ class ShippingRate(db.Model):
     zone_8 = db.Column(db.Numeric(precision=10, scale=2), default=0.00)
 
     def __repr__(self):
-        return f'<ShippingRate User:{self.user_id} Weight:{self.weight_lb}>'
+        return f'<ShippingRate Client:{self.client_id} Weight:{self.weight_lb} Carrier:{self.carrier} Service:{self.services}>'
 
 class ZoneMapping(db.Model):
     __tablename__ = 'zone_mappings'
