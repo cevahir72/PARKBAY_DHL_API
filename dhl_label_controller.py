@@ -6,7 +6,7 @@ import requests
 from data_helper import dhl_request_helper
 from dhl_service import get_dhl_token
 from decimal import Decimal
-from calculator import calculate_shipping_cost
+
 from datetime import datetime
 
 
@@ -100,23 +100,6 @@ def dhl_rate_label():
 
     dhl_payload = dhl_request_helper(data, client.reference_code, "rate")
 
-    #mapped_rate, mapped_message = 0,""
-    mapped_rate, mapped_message = calculate_shipping_cost(
-        client.id,
-        data["shipFrom"]["postalCode"],
-        data["shipTo"]["postalCode"],
-        data["packages"][0]["weight"]["value"],
-        'DHL'
-    )
-    if not mapped_rate:
-        return jsonify({"errors": [
-            {
-                "code": "ZoneWeight",
-                "details": mapped_message,
-                "message": "Zone Weight"
-            }
-        ]}), 400
-
     is_test_label = data.get("isTestLabel", False)
 
     # DHL Rate endpoint çağrısı (shipping/v4/products)
@@ -140,11 +123,9 @@ def dhl_rate_label():
 
                 if total_charge is not None:
                     total_charge = float(total_charge)
-                    mapped_rate = float(mapped_rate)
 
-                    if total_charge > mapped_rate:
-                        mapped_rate = total_charge + 0.50
-                    mapped_rate += float(client.com_fee)
+                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
+                    mapped_rate = total_charge + 0.10 + float(client.com_fee)
 
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
                     first_product["rate"]["amount"] = round(mapped_rate, 2)
@@ -210,23 +191,6 @@ def dhl_create_label():
     rate_payload = dhl_request_helper(data, client.reference_code, "rate")
     is_test_label = data.get("isTestLabel", False)
 
-    #mapped_rate, mapped_message = 0,""
-    mapped_rate, mapped_message = calculate_shipping_cost(
-        client.id,
-        data["shipFrom"]["postalCode"],
-        data["shipTo"]["postalCode"],
-        data["packages"][0]["weight"]["value"],
-        'DHL'
-    )
-    if not mapped_rate:
-        return jsonify({"errors": [
-            {
-                "code": "ZoneWeight",
-                "details": mapped_message,
-                "message": "Zone Weight"
-            }
-        ]}), 400
-
     # DHL Rate endpoint çağrısı (shipping/v4/products)
     rate_status_code, rate_response_data = dhl_request(
         endpoint="shipping/v4/products",
@@ -246,11 +210,9 @@ def dhl_create_label():
 
                 if total_charge is not None:
                     total_charge = float(total_charge)
-                    mapped_rate = float(mapped_rate)
 
-                    if total_charge > mapped_rate:
-                        mapped_rate = total_charge + 0.50
-                    mapped_rate += float(client.com_fee)
+                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
+                    mapped_rate = total_charge + 0.10 + float(client.com_fee)
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
 
