@@ -210,11 +210,15 @@
       <ol>
         <li><a href="#genel">Genel prensipler</a></li>
         <li><a href="#login">Kullanıcı girişi</a></li>
-        <li><a href="#rate">Rate sorgulama</a></li>
-        <li><a href="#label-create">Label oluşturma</a></li>
-        <li><a href="#label-cancel">Label iptal etme</a></li>
+        <li><a href="#rate">Rate sorgulama (Domestic US)</a></li>
+        <li><a href="#label-create">Label oluşturma (Domestic US)</a></li>
+        <li><a href="#label-cancel">Label iptal etme (Domestic US)</a></li>
+        <li><a href="#int-rate">Rate sorgulama (International)</a></li>
+        <li><a href="#int-label-create">Label oluşturma (International)</a></li>
+        <li><a href="#int-label-cancel">Label iptal etme (International)</a></li>
         <li><a href="#manifest-create">Manifest oluşturma</a></li>
         <li><a href="#manifest-download">Manifest indirme</a></li>
+        <li><a href="#field-mapping">Alan eşleştirme: Domestic vs International</a></li>
       </ol>
     </nav>
 
@@ -418,9 +422,162 @@
 }</code></pre></div>
       </section>
 
+      <!-- ============================================================
+           4. DHL INTERNATIONAL DIRECT ENDPOINT'LERİ
+           ============================================================ -->
+      <section class="section" id="int-rate">
+        <h2>4.1 Rate Sorgulama (International)</h2>
+        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası gönderi fiyat sorgulaması yapar. <strong>Gümrük bilgileri (customsDetails) zorunludur.</strong></p>
+        <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/rate</code></div>
+        
+        <h3>İstek Gövdesi</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Alan</th><th>Tip</th><th>Zorunluluk</th><th>Açıklama</th></tr></thead>
+          <tbody>
+            <tr><td>shipTo</td><td>object</td><td>Zorunlu</td><td>Alıcı adresi (countryCode: ISO 2 harf, US dışı)</td></tr>
+            <tr><td>shipTo.name</td><td>string</td><td>Zorunlu</td><td>Alıcı adı</td></tr>
+            <tr><td>shipTo.addressLine1</td><td>string</td><td>Zorunlu</td><td>Adres satırı 1</td></tr>
+            <tr><td>shipTo.addressLine2</td><td>string</td><td>Opsiyonel</td><td>Adres satırı 2</td></tr>
+            <tr><td>shipTo.city</td><td>string</td><td>Zorunlu</td><td>Şehir</td></tr>
+            <tr><td>shipTo.stateOrRegion</td><td>string</td><td>Opsiyonel</td><td>Eyalet/Bölge (ülkeye göre)</td></tr>
+            <tr><td>shipTo.countryCode</td><td>string</td><td>Zorunlu</td><td>ISO 2 harf ülke kodu (örn: DE, CA, GB)</td></tr>
+            <tr><td>shipTo.postalCode</td><td>string</td><td>Zorunlu</td><td>Posta kodu</td></tr>
+            <tr><td>shipTo.email</td><td>string</td><td>Zorunlu</td><td>E-posta (gümrük bildirimi için)</td></tr>
+            <tr><td>shipTo.phoneNumber</td><td>string</td><td>Opsiyonel</td><td>Telefon numarası</td></tr>
+            <tr><td>shipFrom</td><td>object</td><td>Zorunlu</td><td>Gönderici adresi (US warehouse)</td></tr>
+            <tr><td>shipFrom.postalCode</td><td>string</td><td>Zorunlu</td><td><strong>Geçerli warehouse ZIP+4:</strong> 75081-1955, 75243-5485, 77407-9012, 75006-2527</td></tr>
+            <tr><td>packages</td><td>array</td><td>Zorunlu</td><td>Paket listesi</td></tr>
+            <tr><td>packages[].dimensions</td><td>object</td><td>Zorunlu</td><td>length, width, height, unit (INCH)</td></tr>
+            <tr><td>packages[].weight</td><td>object</td><td>Zorunlu</td><td>value, unit (POUND veya KG)</td></tr>
+            <tr><td>packages[].items</td><td>array</td><td><strong>Zorunlu</strong></td><td>Gümrük için eşya detayları (en az 1)</td></tr>
+            <tr><td>packages[].items[].description</td><td>string</td><td>Zorunlu</td><td>Eşya açıklaması (İngilizce)</td></tr>
+            <tr><td>packages[].items[].quantity</td><td>integer</td><td>Zorunlu</td><td>Adet</td></tr>
+            <tr><td>packages[].items[].itemValue</td><td>object</td><td>Zorunlu</td><td>{value: number, unit: "USD"}</td></tr>
+            <tr><td>packages[].items[].weight</td><td>object</td><td>Zorunlu</td><td>{value: number, unit: "LB"}</td></tr>
+            <tr><td>packages[].items[].hsCode</td><td>string</td><td>Zorunlu</td><td>Harmonized System kodu (örn: 8518.30.0000)</td></tr>
+            <tr><td>packages[].items[].originCountry</td><td>string</td><td>Zorunlu</td><td>Menşe ülke ISO 2 kodu (örn: CN)</td></tr>
+            <tr><td>marketPlace</td><td>string</td><td>Zorunlu</td><td>Platform adı (Etsy, Shopify, vb.)</td></tr>
+            <tr><td>isTestLabel</td><td>boolean</td><td>Opsiyonel</td><td>Test modu için true (sandbox)</td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Örnek İstek · JSON</h3>
+        <div class="code-block"><div class="code-label">International Rate Request</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "shipTo": {
+    "name": "Hans Mueller",
+    "addressLine1": "Musterstrasse 12",
+    "addressLine2": "",
+    "city": "Berlin",
+    "stateOrRegion": "BE",
+    "countryCode": "DE",
+    "postalCode": "10115",
+    "email": "hans.mueller@example.de",
+    "phoneNumber": "+49 30 1234567"
+  },
+  "shipFrom": {
+    "name": "RV-TX Warehouse",
+    "addressLine1": "18120 West Bellfort, Ste G",
+    "companyName": "RV-TX",
+    "stateOrRegion": "TX",
+    "city": "Richmond",
+    "countryCode": "US",
+    "postalCode": "75243-5485"
+  },
+  "packages": [{
+    "dimensions": { "length": 12, "width": 10, "height": 8, "unit": "INCH" },
+    "weight": { "unit": "POUND", "value": 0.5 },
+    "items": [{
+      "description": "Wireless Bluetooth Headphones",
+      "quantity": 1,
+      "itemValue": { "value": 29.99, "unit": "USD" },
+      "weight": { "value": 0.5, "unit": "LB" },
+      "hsCode": "8518.30.0000",
+      "originCountry": "CN"
+    }]
+  }],
+  "marketPlace": "Etsy",
+  "isTestLabel": true
+}</code></pre></div>
+
+        <h3>Başarılı Yanıt — HTTP 200 OK</h3>
+        <div class="code-block"><div class="code-label">International Rate Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "description": "DHL Parcel International Direct - Efficient cross-border shipping",
+  "orderedProductId": "PLT",
+  "productName": "DHL Parcel International Direct",
+  "rate": {
+    "amount": 18.50,
+    "currency": "USD",
+    "effectiveFrom": "2026-10-16",
+    "priceZone": "INTL-EU-DE"
+  },
+  "trackingAvailable": "FULL",
+  "originalAmount": 16.82
+}</code></pre></div>
+
+        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code> zaten <strong>%10 işlem ücreti eklenmiş</strong> haldedir. <code>originalAmount</code> DHL ham fiyatıdır.</div>
+      </section>
+
+      <section class="section" id="int-label-create">
+        <h2>4.2 Label Oluşturma (International)</h2>
+        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce rate alınır, %10 eklenir, sonra label üretilir.</p>
+        <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/create</code></div>
+        
+        <h3>İstek Gövdesi</h3>
+        <p>Rate sorgusuyla aynı gövde kullanılır. <code>isTestLabel</code> opsiyoneldir.</p>
+        
+        <h3>Başarılı Yanıt — HTTP 200 OK</h3>
+        <div class="code-block"><div class="code-label">International Label Create Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "distributionCenter": "USDFW1",
+  "labels": [{
+    "createdOn": "2026-10-16T14:30:22.000Z",
+    "dhlPackageId": "JJD01234567890123456789",
+    "encodeType": "BASE64",
+    "format": "PNG",
+    "labelData": "iVBORw0KGgoAAAANSUhEUg...",
+    "shipmentId": "INT-CLIENT-1703123456789-INT",
+    "totalCharge": { "unit": "USD", "value": 20.35 },
+    "trackingId": "JJD01234567890123456789"
+  }],
+  "orderedProductId": "PLT",
+  "timestamp": "2026-10-16T14:30:22.123Z"
+}</code></pre></div>
+
+        <div class="status-note success"><strong>Başarılı:</strong> Etiket oluşturuldu, PDF/PNG base64 <code>labelData</code> alanında döner. <code>totalCharge.value</code> %10 işlem ücreti dahil final fiyattır.</div>
+
+        <h3>Yerel Kayıt Hatası — HTTP 500</h3>
+        <p>DHL etiketi başarıyla oluşturulduğu halde yerel veritabanına kaydedilemezse <code>LabelPersistenceError</code> döner (domestic ile aynı yapı).</p>
+      </section>
+
+      <section class="section" id="int-label-cancel">
+        <h2>4.3 Label İptal Etme (International)</h2>
+        <p>Oluşturulan DHL International etiketini iptal eder (iade/geri çağırma).</p>
+        <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/cancel</code></div>
+        
+        <h3>İstek Gövdesi</h3>
+        <div class="code-block"><div class="code-label">International Cancel Request</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "shipmentId": "INT-CLIENT-1703123456789-INT",
+  "isTestLabel": true
+}</code></pre></div>
+
+        <h3>Başarılı Yanıt — HTTP 200 OK</h3>
+        <div class="code-block"><div class="code-label">International Cancel Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "success": true,
+  "message": "Label cancelled successfully"
+}</code></pre></div>
+
+        <h3>Başarısız Yanıt</h3>
+        <div class="code-block"><div class="code-label">Hata örneği</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "success": false,
+  "message": "Label not found"
+}</code></pre></div>
+      </section>
+
+      <!-- ============================================================
+           5. MANIFEST ENDPOINT'LERİ (Ortak)
+           ============================================================ -->
       <section class="section" id="manifest-create">
-        <h2>3.4 Manifest Oluşturma</h2>
-        <p>Belirtilen çıkış posta kodu ve DHL paket kimlikleri için manifest oluşturur.</p>
+        <h2>5.1 Manifest Oluşturma</h2>
+        <p>Belirtilen çıkış posta kodu ve DHL paket kimlikleri için manifest oluşturur. Hem domestic (US) hem international (PLT) etiketler için geçerlidir.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/manifest/create</code></div>
         <h3>İstek Gövdesi</h3>
         <div class="table-wrap"><table>
@@ -466,8 +623,8 @@
       </section>
 
       <section class="section" id="manifest-download">
-        <h2>3.5 Manifest İndirme</h2>
-        <p>Daha önce oluşturulan manifestin durumunu ve PDF içeriğini getirir.</p>
+        <h2>5.2 Manifest İndirme</h2>
+        <p>Daha önce oluşturulan manifestin durumunu ve PDF içeriğini getirir. Hem domestic hem international için geçerlidir.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/manifest/download</code></div>
 
         <h3>İstek Gövdesi</h3>
@@ -529,6 +686,50 @@
     }
   }
 }</code></pre></div>
+      </section>
+
+      <!-- ============================================================
+           6. ALAN EŞLEŞTİRME: DOMESTIC vs INTERNATIONAL
+           ============================================================ -->
+      <section class="section" id="field-mapping">
+        <h2>6. Alan Eşleştirme: Domestic (US) vs International</h2>
+        <p>Aynı müşteri JSON formatı (<code>shipTo</code>, <code>shipFrom</code>, <code>packages</code>) her iki endpoint için de kullanılır. Arka planda <code>data_helper.py</code> farklı DHL payload'larına dönüştürür.</p>
+        
+        <h3>6.1 Müşteri JSON → DHL Payload Karşılaştırması</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Müşteri Alanı</th><th>Domestic DHL (<code>dhl_request_helper</code>)</th><th>International DHL (<code>dhl_int_request_helper</code>)</th></tr></thead>
+          <tbody>
+            <tr><td><code>shipTo.addressLine1</code></td><td><code>consigneeAddress.address1</code></td><td><code>consigneeAddress.address1</code></td></tr>
+            <tr><td><code>shipTo.stateOrRegion</code></td><td><code>consigneeAddress.state</code></td><td><code>consigneeAddress.state</code></td></tr>
+            <tr><td><code>shipTo.countryCode</code></td><td><code>consigneeAddress.country</code> (her zaman "US")</td><td><code>consigneeAddress.country</code> (ISO 2: DE, CA, GB...)</td></tr>
+            <tr><td><code>shipFrom.postalCode</code></td><td><code>pickup</code> + <code>distributionCenter</code> mapping</td><td><code>pickup</code> + <code>distributionCenter</code> mapping (aynı)</td></tr>
+            <tr><td><code>packages[].weight.unit</code></td><td><code>LB</code> (POUND→LB)</td><td><code>LB</code> (POUND→LB)</td></tr>
+            <tr><td><code>packages[].dimensions.unit</code></td><td><code>IN</code> (INCH→IN)</td><td><code>IN</code> (INCH→IN)</td></tr>
+            <tr><td><code>orderedProductId</code></td><td><strong>"GND"</strong> (Ground)</td><td><strong>"PLT"</strong> (Parcel International)</td></tr>
+            <tr><td><code>service</code></td><td><strong>"DELCON"</strong></td><td><strong>"DELCON"</strong></td></tr>
+            <tr><td><code>packages[].items</code></td><td>Yok (domestic gümrük yok)</td><td><strong>Zorunlu</strong> → <code>customsDetails</code> (root)</td></tr>
+            <tr><td>Rate endpoint</td><td><code>POST /shipping/v4/products</code></td><td><code>POST /shipping/v4/rates</code></td></tr>
+            <tr><td>Label endpoint</td><td><code>POST /shipping/v4/label?format=PNG</code></td><td><code>POST /shipping/v4/label?format=PNG</code></td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>6.2 International <code>customsDetails</code> Şeması (DHL Doğrulama)</h3>
+        <p>DHL API <strong>strict schema</strong> kullanır. Yanlış alan adı <code>400.0204003 Static Validation Failed</code> hatasına yol açar.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Yanlış (Yaygın Hata)</th><th>Doğru (DHL Schema)</th><th>Tip</th><th>Zorunlu</th></tr></thead>
+          <tbody>
+            <tr><td><code>description</code></td><td><code>itemDescription</code></td><td>string</td><td>✅</td></tr>
+            <tr><td><code>quantity</code></td><td><code>packagedQuantity</code></td><td>integer</td><td>✅</td></tr>
+            <tr><td><code>value: {value, currency}</code></td><td><code>itemValue</code> (number) + <code>currency</code> (ayrı)</td><td>number + string</td><td>✅</td></tr>
+            <tr><td><code>originCountry</code></td><td><code>countryOfOrigin</code></td><td>string (ISO 2)</td><td>✅</td></tr>
+            <tr><td><code>weight</code> (in customsDetails)</td><td><strong>YOK</strong> (schema'da tanımsız)</td><td>-</td><td>❌ Kaldır</td></tr>
+            <tr><td><code>productType</code></td><td><strong>YOK</strong></td><td>-</td><td>❌ Kaldır</td></tr>
+            <tr><td><code>customs</code> (root)</td><td><strong>YOK</strong></td><td>-</td><td>❌ Kaldır</td></tr>
+            <tr><td><code>channelDetails</code> (root)</td><td><strong>YOK</strong></td><td>-</td><td>❌ Kaldır</td></tr>
+          </tbody>
+        </table></div>
+
+        <div class="note"><strong>Özet:</strong> International için müşteri JSON'daki <code>packages[].items</code> verileri alınır, DHL şemasına uygun <code>customsDetails</code> array'i (root seviyesinde) oluşturulur. <code>packageDetail.items</code> ASLA gönderilmez.</div>
       </section>
     </main>
   </div>

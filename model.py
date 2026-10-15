@@ -234,3 +234,54 @@ class Label(db.Model):
     client = db.relationship("Client", backref="labels")
 
 
+class InternationalLabel(db.Model):
+    __tablename__ = "international_labels"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+
+    shipment_id = db.Column(db.String(255), index=True)      # DHL shipment/package ID
+    pickup_id = db.Column(db.String(255))
+
+    carrier = db.Column(db.String(50), default="DHL")
+    service = db.Column(db.String(100))          # DHL International service type
+
+    tracking_number = db.Column(db.String(255), index=True)
+
+    market_place = db.Column(db.String(50))
+    reference_code = db.Column(db.String(50))
+
+    # Adres bilgileri
+    from_address = db.Column(db.String(500))
+    from_zip = db.Column(db.String(15))
+    from_country = db.Column(db.String(3))       # ISO country code (USA, CAN, DEU, etc.)
+    to_address = db.Column(db.String(500))
+    to_zip = db.Column(db.String(15))
+    to_country = db.Column(db.String(3))
+
+    customer_email = db.Column(db.String(100))
+    customer_phone = db.Column(db.String(50))
+    weight = db.Column(db.Numeric(precision=4, scale=1))
+
+    # Maliyetler
+    amz_cost = db.Column(db.Numeric(10,2), nullable=False)   # DHL orijinal maliyeti
+    my_cost = db.Column(db.Numeric(10,2), nullable=False)    # %10 eklenmiş final maliyet
+
+    status = db.Column(db.String(50), default="purchased")
+    # purchased / refunded / cancelled
+
+    refunded_at = db.Column(db.DateTime, nullable=True)
+
+    # 🔸 GÜMRÜK / CUSTOMS ALANLARI (International için zorunlu)
+    customs_value = db.Column(db.Numeric(10,2))          # Toplam gümrük değeri
+    customs_currency = db.Column(db.String(3), default="USD")
+    hs_code = db.Column(db.String(20))                   # Harmonized System Code
+    origin_country = db.Column(db.String(3))             # Ülke menşei (ISO code)
+    item_description = db.Column(db.String(255))         # Ürün açıklaması
+    item_quantity = db.Column(db.Integer, default=1)     # Adet
+
+    client = db.relationship("Client", backref="international_labels")
+
+

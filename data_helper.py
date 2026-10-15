@@ -249,3 +249,151 @@ def dhl_request_helper(client_json, client_id, r_type):
 
 
     return payload
+
+
+def dhl_int_request_helper(client_json, client_id, r_type):
+    """
+    DHL International Direct API için payload hazırlar.
+    DHL International Direct (eCommerce International) endpoint'leri için.
+    
+    DHL Schema gereksinimleri:
+    - customsDetails ROOT seviyesinde (packageDetail içinde DEĞİL)
+    - itemValue: NUMBER (object değil)
+    - currency: ROOT level ayrı alan
+    - countryOfOrigin (originCountry DEĞİL)
+    - packagedQuantity (quantity DEĞİL)
+    - itemDescription (description DEĞİL)
+    - weight customsDetails içinde YOK
+    - customs, channelDetails root'ta YOK
+    """
+    pickup_dict = {"75081-1955":"5410014","75243-5485":"5410429","77407-9012": "5410448","75006-2527":"5411053"}
+    distributionCenter = {"75081-1955":"USDFW1","75243-5485":"USDFW1","77407-9012": "USIAH1","75006-2527":"USDFW1"}
+    timestamp = int(time.time() * 1000)
+    package_id = f"{client_id}-{timestamp}-INT"
+
+    payload = {}
+    
+    # Consignee (Alıcı) - International format
+    ship_to = {}
+    add_if(ship_to, "name", client_json.get("shipTo", {}).get("name"))
+    add_if(ship_to, "address1", client_json.get("shipTo", {}).get("addressLine1"))
+    add_if(ship_to, "address2", client_json.get("shipTo", {}).get("addressLine2"))
+    add_if(ship_to, "companyName", client_json.get("shipTo", {}).get("companyName"))
+    add_if(ship_to, "state", client_json.get("shipTo", {}).get("stateOrRegion"))
+    add_if(ship_to, "city", client_json.get("shipTo", {}).get("city"))
+    add_if(ship_to, "country", client_json.get("shipTo", {}).get("countryCode"))  # ISO 2 harf
+    add_if(ship_to, "postalCode", client_json.get("shipTo", {}).get("postalCode"))
+    add_if(ship_to, "email", client_json.get("shipTo", {}).get("email"))
+    add_if(ship_to, "phoneNumber", client_json.get("shipTo", {}).get("phoneNumber"))
+    add_if(payload, "consigneeAddress", ship_to)
+    
+    # Return/Sender (Gönderici) - International format
+    ship_from = {}
+    add_if(ship_from, "name", client_json.get("shipFrom", {}).get("name"))
+    add_if(ship_from, "address1", client_json.get("shipFrom", {}).get("addressLine1"))
+    add_if(ship_from, "address2", client_json.get("shipFrom", {}).get("addressLine2"))
+    add_if(ship_from, "companyName", client_json.get("shipFrom", {}).get("companyName"))
+    add_if(ship_from, "state", client_json.get("shipFrom", {}).get("stateOrRegion"))
+    add_if(ship_from, "city", client_json.get("shipFrom", {}).get("city"))
+    add_if(ship_from, "country", client_json.get("shipFrom", {}).get("countryCode"))
+    add_if(ship_from, "postalCode", client_json.get("shipFrom", {}).get("postalCode"))
+    add_if(ship_from, "email", client_json.get("shipFrom", {}).get("email"))
+    add_if(ship_from, "phoneNumber", client_json.get("shipFrom", {}).get("phoneNumber"))
+    add_if(payload, "returnAddress", ship_from)
+
+    # Pickup ve distribution center
+    from_zip = ship_from.get("postalCode")
+    pickup_id = pickup_dict.get(from_zip)
+    dist_center = distributionCenter.get(from_zip)
+    
+    add_if(payload, "pickup", pickup_id)
+    add_if(payload, "orderedProductId", "PLT")  # DHL Parcel International Direct
+    add_if(payload, "distributionCenter", dist_center)
+    add_if(payload, "shipperInstruction", client_json.get("shipperInstruction"))
+    
+    # Warehouse zip validation - PLT için geçerli warehouse zip zorunlu
+    if not pickup_id or not dist_center:
+        app.logger.warning(f"PLT International: Invalid warehouse zip {from_zip}. Valid: {list(pickup_dict.keys())}")
+
+    # Paketler
+    for package in client_json.get("packages", []):
+        package_dict = {}
+
+        add_if(package_dict, "packageId", package_id)
+        add_if(package_dict, "packageDescription", f"Client {client_id} international package")
+
+        # Ağırlık
+        weight = {}
+        weight_unit = package.get("weight", {}).get("unit", "LB")
+        add_if(weight, "unitOfMeasure", weight_unit.replace("POUND", "LB"))
+        add_if(weight, "value", package.get("weight", {}).get("value"))
+        add_if(package_dict, "weight", weight)
+
+        # Boyutlar
+        dimension = {}
+        add_if(dimension, "length", min(20, package.get("dimensions", {}).get("length", 20)))
+        add_if(dimension, "width", min(17, package.get("dimensions", {}).get("width", 17)))
+        add_if(dimension, "height", min(14, package.get("dimensions", {}).get("height", 14)))
+        dim_unit = package.get("dimensions", {}).get("unit", "INCH")
+        add_if(dimension, "unitOfMeasure", dim_unit.replace("INCH", "IN"))
+        add_if(dimension, "packageType", "1")  # 1 = Package
+        add_if(package_dict, "dimension", dimension)
+
+        # Shipping Cost (Rate için tahmini değerler)
+        shippingCost = {}
+        add_if(shippingCost, "currency", "USD")
+        add_if(shippingCost, "freight", 10)
+        add_if(shippingCost, "declaredValue", 85)
+        add_if(shippingCost, "insuredValue", 80)
+        add_if(shippingCost, "dutiesPaid", True)  # DDP - Delivery Duty Paid
+        add_if(package_dict, "shippingCost", shippingCost)
+
+        # Service - International için
+        add_if(package_dict, "service", "DELCON")  # DHL International service code
+
+        # NOT: packageDetail.items EKLEME - DHL schema additionalProperties: false
+        # Gümrük bilgileri customsDetails ROOT seviyesinde ayrı array olarak gönderilir
+
+        if r_type == "create":
+            add_if(package_dict, "serviceEndorsement", "1")  # International endorsement
+            add_if(package_dict, "billingReference1", str(client_id))
+            add_if(package_dict, "billingReference2", str(client_id))
+
+    if r_type == "rate":
+        today_date = datetime.utcnow().strftime("%Y-%m-%d")
+        rate = {}
+        add_if(rate, "calculate", True)
+        add_if(rate, "rateDate", today_date)
+        add_if(rate, "maxPrice", 500)  # International için daha yüksek max
+        add_if(rate, "currency", "USD")
+        add_if(payload, "rate", rate)
+
+    add_if(payload, "packageDetail", package_dict)
+
+    # ===== CUSTOMS DETAILS - ROOT SEVİYESİ (DHL Schema'ya uygun) =====
+    customs_details = []
+    for package in client_json.get("packages", []):
+        for item in package.get("items", []):
+            # Her item için customsDetails entry'si oluştur
+            item_value = item.get("itemValue", {}).get("value")
+            if item_value is not None:
+                customs_entry = {}
+                add_if(customs_entry, "itemDescription", item.get("description"))
+                add_if(customs_entry, "packagedQuantity", item.get("quantity", 1))
+                add_if(customs_entry, "itemValue", item_value)  # NUMBER, not object
+                add_if(customs_entry, "currency", item.get("itemValue", {}).get("unit", "USD"))
+                add_if(customs_entry, "countryOfOrigin", item.get("originCountry"))
+                add_if(customs_entry, "hsCode", item.get("hsCode") or item.get("itemIdentifier"))
+                # weight customsDetails içinde YOK (schema'da tanımsız)
+                customs_details.append(customs_entry)
+    
+    if customs_details:
+        add_if(payload, "customsDetails", customs_details)
+
+    # International spesifik alanlar (sadece schema'da izin verilenler)
+    add_if(payload, "valueAddedServices", client_json.get("valueAddedServices"))
+    add_if(payload, "taxDetails", client_json.get("taxDetails"))
+    # channelDetails root'ta YOK - schema additionalProperties: false
+    # customs root'ta YOK - schema additionalProperties: false
+
+    return payload
