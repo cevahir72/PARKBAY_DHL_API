@@ -179,19 +179,28 @@ def dhl_int_rate_label():
                     # 🎯 DB KIYASLAMASI YOK - Sadece %10 ekle
                     final_rate = round(total_charge * 1.10, 2)
 
-                    # Response'u güncelle
+                    # Orijinal tutar log için sakla (response'a EKLEME)
+                    original_amount = round(total_charge, 2)
+
+                    # Response'u güncelle - SADECE final_rate döner
                     if "rate" in first_item:
                         first_item["rate"]["amount"] = final_rate
-                        first_item["rate"]["originalAmount"] = round(total_charge, 2)
+                        # originalAmount KALDIRILDI - sadece DB/log için
                     elif "totalCharge" in first_item:
                         first_item["totalCharge"]["value"] = final_rate
-                        first_item["totalCharge"]["originalValue"] = round(total_charge, 2)
+                        # originalValue KALDIRILDI - sadece DB/log için
 
                     # rateComponents varsa temizle
                     if "rate" in first_item:
                         first_item.get("rate").pop("rateComponents", None)
 
-                response_value = str(first_item.get("rate") or first_item.get("totalCharge"))
+                # Log için response_value'a original amount da ekle (DB'ye kaydedilsin)
+                rate_obj = first_item.get("rate") or first_item.get("totalCharge")
+                if rate_obj:
+                    # Log'a yazılacak string - original amount içerir
+                    response_value = str({**rate_obj, "originalAmount": original_amount})
+                else:
+                    response_value = str(rate_obj)
 
                 # Sadece ilk ürün objesini yanıt olarak döndür
                 response_to_return = first_item
