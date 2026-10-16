@@ -78,7 +78,7 @@ def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params
 def dhl_int_rate_label():
     """
     DHL International Direct - Rate alma endpoint'i.
-    Gelen DHL fiyatına %10 ekleyip döner (DB ile kıyaslama YOK).
+    Gelen DHL fiyatına 2$ ekleyip döner (DB ile kıyaslama YOK).
     """
     client = g.client
 
@@ -176,8 +176,8 @@ def dhl_int_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # 🎯 DB KIYASLAMASI YOK - Sadece %10 ekle
-                    final_rate = round(total_charge * 1.10, 2)
+                    # 🎯 DB KIYASLAMASI YOK - Sadece 2$ ekle
+                    final_rate = round(total_charge + 2.0, 2)
 
                     # Orijinal tutar log için sakla (response'a EKLEME)
                     original_amount = round(total_charge, 2)
@@ -232,7 +232,7 @@ def dhl_int_create_label():
     """
     DHL International Direct - Label oluşturma endpoint'i.
     1. Önce rate alır (shipping/v4/rates)
-    2. Fiyata %10 ekler
+    2. Fiyata 2$ ekler
     3. Sonra label oluşturur (shipping/v4/label)
     """
     client = g.client
@@ -339,8 +339,8 @@ def dhl_int_create_label():
                     total_charge = float(total_charge)
                     dhl_original_rate = round(total_charge, 2)
 
-                    # 🎯 %10 EKLE - DB kıyaslaması YOK
-                    final_rate = round(total_charge * 1.10, 2)
+                    # 🎯 2$ EKLE - DB kıyaslaması YOK
+                    final_rate = round(total_charge + 2.0, 2)
 
                     if "rate" in first_item:
                         first_item.get("rate").pop("rateComponents", None)
