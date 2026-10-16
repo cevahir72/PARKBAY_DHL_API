@@ -1,7 +1,7 @@
 from flask_app import app, db, client_token_required
 from flask import request, jsonify, g, render_template, send_file
 from flask_login import login_required, current_user
-from model import ShipmentLog, Label, Client
+from model import ShipmentLog, Label, InternationalLabel, Client
 import time
 import requests
 from amazon_service import get_amazon_token
@@ -643,6 +643,299 @@ def export_admin_labels():
 
     filename = (
         "labels_"
+        f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        ".xlsx"
+    )
+
+    return send_file(
+        excel_buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+
+
+# ---------------------------------------------------------
+# INTERNATIONAL LABEL HELPERS
+# ---------------------------------------------------------
+
+def build_international_label_query(args):
+    """
+    Listeleme ve Excel endpoint'inde ortak olarak kullanılan
+    filtrelenmiş InternationalLabel sorgusunu oluşturur.
+    """
+    query = InternationalLabel.query
+
+    client_id = args.get("client_id")
+    carrier = args.get("carrier")
+    status = args.get("status")
+    market_place = args.get("market_place")
+    tracking = args.get("tracking")
+    start_date = args.get("start_date")
+    end_date = args.get("end_date")
+
+    if client_id:
+        query = query.filter(
+            InternationalLabel.client_id == client_id
+        )
+
+    if carrier:
+        query = query.filter(
+            InternationalLabel.carrier == carrier
+        )
+
+    if status:
+        query = query.filter(
+            InternationalLabel.status == status
+        )
+
+    if market_place:
+        query = query.filter(
+            InternationalLabel.market_place.ilike(
+                f"%{market_place}%"
+            )
+        )
+
+    if tracking:
+        query = query.filter(
+            InternationalLabel.tracking_number.ilike(
+                f"%{tracking}%"
+            )
+        )
+
+    if start_date:
+        start_datetime = datetime.strptime(
+            start_date,
+            "%Y-%m-%d"
+        )
+
+        query = query.filter(
+            InternationalLabel.created_at >= start_datetime
+        )
+
+    if end_date:
+        # Bitiş tarihinde seçilen günün tamamını dahil eder.
+        end_datetime = (
+            datetime.strptime(end_date, "%Y-%m-%d")
+            + timedelta(days=1)
+        )
+
+        query = query.filter(
+            InternationalLabel.created_at < end_datetime
+        )
+
+    return query
+
+
+# ---------------------------------------------------------
+# INTERNATIONAL LABEL LIST ENDPOINT
+# ---------------------------------------------------------
+
+@app.route("/admin/international-labels", methods=["GET"])
+@login_required
+@role_required("admin")
+def admin_international_labels():
+    page = request.args.get(
+        "page",
+        default=1,
+        type=int
+    )
+
+    allowed_per_page = [20, 50, 100, 500]
+
+    per_page = request.args.get(
+        "per_page",
+        default=20,
+        type=int
+    )
+
+    # URL üzerinden izin verilmeyen bir değer gelirse
+    # varsayılan olarak 20 kullanılır.
+    if per_page not in allowed_per_page:
+        per_page = 20
+
+    filters = {
+        "client_id": request.args.get("client_id"),
+        "carrier": request.args.get("carrier"),
+        "status": request.args.get("status"),
+        "market_place": request.args.get("market_place"),
+        "tracking": request.args.get("tracking"),
+        "start_date": request.args.get("start_date"),
+        "end_date": request.args.get("end_date"),
+    }
+
+    query = build_international_label_query(request.args)
+
+    # Filtrelenmiş tüm kayıtların toplamları
+    grand_totals = query.with_entities(
+        func.coalesce(
+            func.sum(InternationalLabel.amz_cost),
+            0
+        ).label("total_amz"),
+        func.coalesce(
+            func.sum(InternationalLabel.my_cost),
+            0
+        ).label("total_my"),
+    ).first()
+
+    # Sayfalama
+    pagination = (
+        query
+        .order_by(InternationalLabel.created_at.desc())
+        .paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False,
+        )
+    )
+
+    labels = pagination.items
+
+    # Yalnızca açık sayfadaki kayıtların toplamları
+    page_amz_total = sum(
+        (label.amz_cost or 0)
+        for label in labels
+    )
+
+    page_my_total = sum(
+        (label.my_cost or 0)
+        for label in labels
+    )
+
+    clients = Client.query.all()
+
+    return render_template(
+        "international_labels.html",
+        labels=labels,
+        pagination=pagination,
+        clients=clients,
+        filters=filters,
+        allowed_per_page=allowed_per_page,
+        per_page=per_page,
+        grand_total_amz=grand_totals.total_amz,
+        grand_total_my=grand_totals.total_my,
+        page_amz_total=page_amz_total,
+        page_my_total=page_my_total,
+    )
+
+
+# ---------------------------------------------------------
+# INTERNATIONAL LABEL EXCEL EXPORT ENDPOINT
+# ---------------------------------------------------------
+
+@app.route(
+    "/admin/international-labels/export",
+    methods=["GET"]
+)
+@login_required
+@role_required("admin")
+def export_admin_international_labels():
+    query = (
+        build_international_label_query(request.args)
+        .order_by(InternationalLabel.created_at.desc())
+    )
+
+    labels = query.all()
+
+    columns = [
+        "Date",
+        "Client",
+        "Carrier",
+        "Service",
+        "Tracking Number",
+        "Marketplace",
+        "From Country",
+        "From ZIP",
+        "To Country",
+        "To ZIP",
+        "Weight",
+        "Original Cost",
+        "My Cost",
+        "Status",
+    ]
+
+    excel_rows = []
+
+    for label in labels:
+        excel_rows.append({
+            "Date": label.created_at,
+            "Client": (
+                label.client.reference_code
+                if label.client
+                else ""
+            ),
+            "Carrier": label.carrier or "",
+            "Service": label.service or "",
+            "Tracking Number": label.tracking_number or "",
+            "Marketplace": label.market_place or "",
+            "From Country": label.from_country or "",
+            "From ZIP": label.from_zip or "",
+            "To Country": label.to_country or "",
+            "To ZIP": label.to_zip or "",
+            "Weight": label.weight or "",
+            "Original Cost": label.amz_cost or 0,
+            "My Cost": label.my_cost or 0,
+            "Status": label.status or "",
+        })
+
+    # Kayıt olmasa bile Excel sütun başlıkları oluşturulur.
+    dataframe = pd.DataFrame(
+        excel_rows,
+        columns=columns
+    )
+
+    excel_buffer = BytesIO()
+
+    with pd.ExcelWriter(
+        excel_buffer,
+        engine="openpyxl"
+    ) as writer:
+        dataframe.to_excel(
+            writer,
+            sheet_name="International Labels",
+            index=False,
+        )
+
+        worksheet = writer.sheets["International Labels"]
+
+        # Başlık satırını sabit tutar.
+        worksheet.freeze_panes = "A2"
+
+        # Excel filtrelerini aktif eder.
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+        # Sütun genişliklerini içeriklere göre ayarlar.
+        for column_cells in worksheet.columns:
+            column_letter = column_cells[0].column_letter
+            maximum_length = 0
+
+            for cell in column_cells:
+                cell_value = cell.value
+
+                if cell_value is None:
+                    cell_length = 0
+                else:
+                    cell_length = len(str(cell_value))
+
+                maximum_length = max(
+                    maximum_length,
+                    cell_length
+                )
+
+            worksheet.column_dimensions[
+                column_letter
+            ].width = min(
+                maximum_length + 2,
+                40
+            )
+
+    excel_buffer.seek(0)
+
+    filename = (
+        "international_labels_"
         f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
         ".xlsx"
     )
