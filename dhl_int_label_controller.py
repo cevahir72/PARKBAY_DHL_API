@@ -149,7 +149,7 @@ def dhl_int_rate_label():
     # DHL International Rate endpoint çağrısı
     # DHL International Direct rate endpoint: shipping/v4/rates veya shipping/v4/products (int'l)
     status_code, response_data = dhl_int_request(
-        endpoint="shipping/v4/rates",  # International rates endpoint
+        endpoint="shipping/v4/products",  # International rates endpoint
         payload=dhl_payload,
         method="POST",
         is_test=is_test_label
@@ -315,7 +315,7 @@ def dhl_int_create_label():
     rate_payload = dhl_int_request_helper(data, client.reference_code, "rate")
 
     rate_status_code, rate_response_data = dhl_int_request(
-        endpoint="shipping/v4/rates",
+        endpoint="shipping/v4/products",  # International rates endpoint
         payload=rate_payload,
         method="POST",
         is_test=is_test_label
