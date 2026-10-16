@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">
+                International Label Management & Filters
+            </h6>
+        </div>
+
+        <div class="card-body">
+            <!-- Filtreleme Formu -->
+            <form
+                method="GET"
+                action="{{ url_for('admin_international_labels') }}"
+                class="row g-3 mb-4"
+            >
+                <div class="col-md-2">
+                    <label class="form-label">Client</label>
+
+                    <select
+                        name="client_id"
+                        class="form-select form-select-sm"
+                    >
+                        <option value="">All Clients</option>
+
+                        {% for client in clients %}
+                        <option
+                            value="{{ client.id }}"
+                            {% if filters.client_id|int == client.id %}
+                            selected
+                            {% endif %}
+                        >
+                            {{ client.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Status</label>
+
+                    <select
+                        name="status"
+                        class="form-select form-select-sm"
+                    >
+                        <option value="">All Status</option>
+
+                        <option
+                            value="purchased"
+                            {% if filters.status == 'purchased' %}
+                            selected
+                            {% endif %}
+                        >
+                            Purchased
+                        </option>
+
+                        <option
+                            value="refunded"
+                            {% if filters.status == 'refunded' %}
+                            selected
+                            {% endif %}
+                        >
+                            Refunded
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Marketplace</label>
+
+                    <input
+                        type="text"
+                        name="market_place"
+                        class="form-control form-control-sm"
+                        value="{{ filters.market_place or '' }}"
+                        placeholder="Search market_place..."
+                    >
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Tracking #</label>
+
+                    <input
+                        type="text"
+                        name="tracking"
+                        class="form-control form-control-sm"
+                        value="{{ filters.tracking or '' }}"
+                        placeholder="Search tracking..."
+                    >
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label">Start Date</label>
+
+                    <input
+                        type="date"
+                        name="start_date"
+                        class="form-control form-control-sm"
+                        value="{{ filters.start_date or '' }}"
+                    >
+                </div>
+
+                <!-- Sayfa başına kayıt sayısı -->
+                <div class="col-md-2">
+                    <label class="form-label">Rows</label>
+
+                    <select
+                        name="per_page"
+                        class="form-select form-select-sm"
+                    >
+                        {% for option in allowed_per_page %}
+                        <option
+                            value="{{ option }}"
+                            {% if per_page == option %}
+                            selected
+                            {% endif %}
+                        >
+                            {{ option }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    <button
+                        type="submit"
+                        class="btn btn-primary btn-sm w-100"
+                    >
+                        Filter Results
+                    </button>
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    <button
+                        type="submit"
+                        class="btn btn-success btn-sm w-100"
+                        formaction="{{ url_for('export_admin_international_labels') }}"
+                    >
+                        Download Excel
+                    </button>
+                </div>
+            </form>
+
+            <hr>
+
+            <!-- International Label Tablosu -->
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Client</th>
+                            <th>Carrier/Service</th>
+                            <th>Tracking Number</th>
+                            <th>Market</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Weight</th>
+                            <th>Orj. Cost</th>
+                            <th>My Cost</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for label in labels %}
+                        <tr>
+                            <td>
+                                {{
+                                    (pagination.page - 1)
+                                    * pagination.per_page
+                                    + loop.index
+                                }}
+                            </td>
+
+                            <td>
+                                {{ label.created_at.strftime('%Y-%m-%d %H:%M') }}
+                            </td>
+
+                            <td>
+                                {{ label.client.reference_code }}
+                            </td>
+
+                            <td>
+                                <span class="badge bg-info text-dark">
+                                    {{ label.carrier }}
+                                </span>
+
+                                {{ label.service }}
+                            </td>
+
+                            <td>
+                                <code>{{ label.tracking_number }}</code>
+                            </td>
+
+                            <td>{{ label.market_place }}</td>
+
+                            <td>
+                                {% if label.from_country %}
+                                <span class="badge bg-secondary">
+                                    {{ label.from_country }}
+                                </span>
+                                {% endif %}
+
+                                {{ label.from_zip }}
+                            </td>
+
+                            <td>
+                                {% if label.to_country %}
+                                <span class="badge bg-secondary">
+                                    {{ label.to_country }}
+                                </span>
+                                {% endif %}
+
+                                {{ label.to_zip }}
+                            </td>
+
+                            <td>{{ label.weight }}</td>
+                            <td>${{ label.amz_cost }}</td>
+                            <td>${{ label.my_cost }}</td>
+
+                            <td>
+                                {% if label.status == 'purchased' %}
+                                <span class="badge bg-success">
+                                    Purchased
+                                </span>
+                                {% else %}
+                                <span class="badge bg-danger">
+                                    {{ label.status }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+
+                    <!-- Toplam Satırları -->
+                    <tfoot class="table-secondary font-weight-bold">
+                        <tr>
+                            <td colspan="9" class="text-end">
+                                Page Total:
+                            </td>
+
+                            <td>
+                                ${{ "{:,.2f}".format(page_amz_total) }}
+                            </td>
+
+                            <td>
+                                ${{ "{:,.2f}".format(page_my_total) }}
+                            </td>
+
+                            <td></td>
+                        </tr>
+
+                        <tr class="table-dark">
+                            <td colspan="9" class="text-end">
+                                Filtered Grand Total
+                                ({{ pagination.total }} labels):
+                            </td>
+
+                            <td>
+                                ${{ "{:,.2f}".format(grand_total_amz) }}
+                            </td>
+
+                            <td>
+                                ${{ "{:,.2f}".format(grand_total_my) }}
+                            </td>
+
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination pagination-sm justify-content-center">
+                    {% for page_num in pagination.iter_pages(
+                        left_edge=1,
+                        right_edge=1,
+                        left_current=2,
+                        right_current=2
+                    ) %}
+                        {% if page_num %}
+                        <li
+                            class="page-item
+                            {% if page_num == pagination.page %}
+                            active
+                            {% endif %}"
+                        >
+                            <a
+                                class="page-link"
+                                href="{{ url_for(
+                                    'admin_international_labels',
+                                    page=page_num,
+                                    per_page=per_page,
+                                    **filters
+                                ) }}"
+                            >
+                                {{ page_num }}
+                            </a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled">
+                            <span class="page-link">...</span>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+{% endblock %}
