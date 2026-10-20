@@ -448,6 +448,8 @@ def dhl_int_create_label():
     # DB işlemlerinde kullanmak için DHL bilgileri al
     shipment_id = label.get("packageId") or label.get("shipmentId")
     tracking_number = label.get("dhlPackageId") or label.get("trackingNumber")
+    # Void çağrısında kullanılacak gerçek pickup (DHL yanıtındaki değer önceliklidir)
+    dhl_pickup_id = response_to_return.get("pickup") or dhl_payload.get("pickup")
 
     # Kullanıcıya dönecek response hazırlanıyor
     response_to_return.pop("pickup", None)
@@ -517,7 +519,7 @@ def dhl_int_create_label():
 
             int_label_record = InternationalLabel(
                 client_id=client.id,
-                pickup_id=dhl_payload.get("pickup"),
+                pickup_id=dhl_pickup_id,
                 created_at=datetime.utcnow(),
                 reference_code=client.reference_code,
                 status="purchased",
@@ -648,33 +650,169 @@ def dhl_int_cancel_label():
     is_test_label = data.get("isTestLabel", False)
 
     label = None
+    dhl_package_id = data.get("dhlPackageId")
+    pickup_id = data.get("pickupId")
 
     if not is_test_label:
-        label = InternationalLabel.query.filter_by(shipment_id=shipment_id, client_id=client.id).first()
+        label = InternationalLabel.query.filter_by(
+            shipment_id=shipment_id,
+            client_id=client.id
+        ).first()
 
-        if not label:
+        if label:
+            if label.status in ("refunded", "cancelled"):
+                return jsonify({"success": False, "message": "Label was canceled before"}), 400
+
+            # DB'de kayıtlı gerçek DHL kimliklerini kullan
+            pickup_id = pickup_id or label.pickup_id
+            dhl_package_id = dhl_package_id or label.tracking_number
+        elif not (pickup_id and dhl_package_id):
+            # Kayıt yoksa iptal için gerekli DHL kimlikleri istekte verilmelidir
             return jsonify({"success": False, "message": "Label not found"}), 404
 
-        if label.status == "refunded":
-            return jsonify({"success": False, "message": "Label was canceled before"}), 400
+    if not pickup_id:
+        return jsonify({
+            "success": False,
+            "message": (
+                "pickupId could not be resolved. "
+                "Send pickupId in the request body for test labels."
+            ),
+            "retryable": False
+        }), 400
 
-    pickup_id = label.pickup_id if label else shipment_id
+    # DHL: DELETE /shipping/v4/label/{pickup}?packageId=... | ?dhlPackageId=...
+    # International (PLT) etiketleri packageId ile bulunamayabilir (400.0000002).
+    # Bu durumda DHL'in ürettiği dhlPackageId (TMUID) ile tekrar denenir.
+    identifiers = [("packageId", shipment_id)]
+    if dhl_package_id and dhl_package_id != shipment_id:
+        identifiers.append(("dhlPackageId", dhl_package_id))
 
-    # DHL proxy isteği
-    status_code, response_data = dhl_int_request(
-        endpoint=f"shipping/v4/label/{pickup_id}",
-        payload=None,
-        method="DELETE",
-        is_test=is_test_label,
-        params={"packageId": shipment_id}
+    attempts = []
+    status_code = None
+    response_data = None
+    used_identifier = None
+
+    for param_name, param_value in identifiers:
+        status_code, response_data = dhl_int_request(
+            endpoint=f"shipping/v4/label/{pickup_id}",
+            payload=None,
+            method="DELETE",
+            is_test=is_test_label,
+            params={param_name: param_value}
+        )
+
+        attempts.append({
+            "identifier": param_name,
+            "value": param_value,
+            "statusCode": status_code,
+            "response": response_data
+        })
+
+        if status_code in (200, 204):
+            used_identifier = param_name
+            break
+
+        # Sadece "kayıt bulunamadı" hatasında diğer kimlikle tekrar dene
+        is_not_found = False
+        if isinstance(response_data, dict):
+            reasons = " ".join(
+                str(param.get("reason", ""))
+                for param in response_data.get("invalidParams", [])
+                if isinstance(param, dict)
+            ).lower()
+            is_not_found = (
+                status_code == 404
+                or str(response_data.get("type", "")).endswith("400.0000002")
+                or "not found" in reasons
+            )
+
+        if not is_not_found:
+            break
+
+    # International (PLT) etiketleri DHL Label API ile void edilemeyebilir.
+    # DHL dokümanı: "Deleting an existing label (Domestic only)".
+    # Her iki kimlik de "not found" dönerse etiket yerel olarak iptal edilir;
+    # böylece müşteri aynı etiketi tekrar kullanmaz.
+    void_not_supported = (
+        status_code not in (200, 204)
+        and isinstance(response_data, dict)
+        and (
+            str(response_data.get("type", "")).endswith("400.0000002")
+            or any(
+                "not found" in str(param.get("reason", "")).lower()
+                for param in response_data.get("invalidParams", [])
+                if isinstance(param, dict)
+            )
+        )
     )
+
+    if void_not_supported:
+        if label:
+            try:
+                label.status = "cancelled"
+                label.refunded_at = datetime.utcnow()
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                app.logger.exception(
+                    "DHL Int label local cancel could not be saved. "
+                    "client_id=%s shipment_id=%s dhl_package_id=%s",
+                    client.id,
+                    shipment_id,
+                    dhl_package_id
+                )
+                return jsonify({
+                    "success": False,
+                    "message": "DHL etiketi iptal edilemedi ve yerel kayıt güncellenemedi"
+                }), 500
+
+        try:
+            log = ShipmentLog(
+                client_id=client.id,
+                action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
+                reference_id=shipment_id,
+                status="cancelled_local",
+                response=str(attempts)
+            )
+            db.session.add(log)
+            db.session.commit()
+        except:
+            db.session.rollback()
+
+        return jsonify({
+            "success": True,
+            "message": (
+                "Label cancelled locally. DHL's Label API does not support "
+                "voiding international labels, so the label was not voided on "
+                "DHL's side. Do not use this label."
+            ),
+            "shipmentId": shipment_id,
+            "dhlPackageId": dhl_package_id,
+            "dhlVoided": False,
+            "localCancelled": True,
+            "attempts": attempts
+        }), 200
 
     # 3. DHL Başarısız ise DB'ye HİÇ DOKUNMA
     if status_code not in (200, 204):
+        try:
+            log = ShipmentLog(
+                client_id=client.id,
+                action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
+                reference_id=shipment_id,
+                status="failed",
+                response=str(attempts)
+            )
+            db.session.add(log)
+            db.session.commit()
+        except:
+            db.session.rollback()
+
         return jsonify({
             "success": False,
             "message": "DHL tarafında iptal başarısız oldu",
-            "dhl_response": response_data
+            "dhl_response": response_data,
+            "attempts": attempts
         }), status_code
 
     if label:
@@ -684,6 +822,13 @@ def dhl_int_cancel_label():
             db.session.commit()
         except Exception as e:
             db.session.rollback()
+            app.logger.exception(
+                "DHL Int label voided but local DB could not be updated. "
+                "client_id=%s shipment_id=%s dhl_package_id=%s",
+                client.id,
+                shipment_id,
+                dhl_package_id
+            )
             return jsonify({"success": False, "message": "DHL iptal edildi fakat DB güncellenemedi"}), 500
 
     try:
@@ -691,12 +836,20 @@ def dhl_int_cancel_label():
             client_id=client.id,
             action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
             reference_id=shipment_id,
-            status="success" if status_code in (200, 204) else "failed",
-            response=str(response_data)
+            status="success",
+            response=str(attempts)
         )
         db.session.add(log)
         db.session.commit()
     except:
         db.session.rollback()
 
-    return jsonify(response_data), status_code
+    return jsonify({
+        "success": True,
+        "message": "Label cancelled successfully",
+        "shipmentId": shipment_id,
+        "dhlPackageId": dhl_package_id,
+        "dhlVoided": True,
+        "localCancelled": False,
+        "voidedBy": used_identifier
+    }), 200

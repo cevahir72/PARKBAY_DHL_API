@@ -550,26 +550,66 @@
 
       <section class="section" id="int-label-cancel">
         <h2>4.3 Label İptal Etme (International)</h2>
-        <p>Oluşturulan DHL International etiketini iptal eder (iade/geri çağırma).</p>
+        <p>Oluşturulan DHL International etiketini iptal eder (void). DHL, iptal için <code>DELETE /shipping/v4/label/{pickup}</code> endpoint'inde <code>packageId</code> veya <code>dhlPackageId</code> kabul eder. International (PLT) etiketlerde <code>packageId</code> ile "not found" (400.0000002) dönebildiği için servis otomatik olarak <code>dhlPackageId</code> ile tekrar dener.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/cancel</code></div>
         
         <h3>İstek Gövdesi</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Alan</th><th>Tip</th><th>Zorunlu</th><th>Açıklama</th></tr></thead>
+          <tbody>
+            <tr><td>shipmentId</td><td>string</td><td>Evet</td><td>Etiket oluştururken dönen <code>shipmentId</code> (<code>packageId</code> / CCN).</td></tr>
+            <tr><td>isTestLabel</td><td>boolean</td><td>Opsiyonel</td><td>Test modu için true (sandbox).</td></tr>
+            <tr><td>dhlPackageId</td><td>string</td><td>Opsiyonel</td><td>DHL'in ürettiği paket kimliği (TMUID). Verilmezse DB'deki kayıttan alınır.</td></tr>
+            <tr><td>pickupId</td><td>string</td><td>Opsiyonel</td><td>DHL pickup hesap numarası. Verilmezse DB'deki kayıttan alınır. Test etiketlerinde (DB kaydı yoksa) zorunludur.</td></tr>
+          </tbody>
+        </table></div>
         <div class="code-block"><div class="code-label">International Cancel Request</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
   "shipmentId": "INT-CLIENT-1703123456789-INT",
-  "isTestLabel": true
+  "isTestLabel": false
 }</code></pre></div>
 
-        <h3>Başarılı Yanıt — HTTP 200 OK</h3>
+        <h3>Başarılı Yanıt — HTTP 200 OK (DHL void başarılı)</h3>
         <div class="code-block"><div class="code-label">International Cancel Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
   "success": true,
-  "message": "Label cancelled successfully"
+  "message": "Label cancelled successfully",
+  "shipmentId": "INT-CLIENT-1703123456789-INT",
+  "dhlPackageId": "33872610208778858",
+  "dhlVoided": true,
+  "localCancelled": false,
+  "voidedBy": "dhlPackageId"
 }</code></pre></div>
 
-        <h3>Başarısız Yanıt</h3>
+        <div class="note"><strong>voidedBy:</strong> İptalin hangi kimlikle başarıldığını gösterir (<code>packageId</code> veya <code>dhlPackageId</code>). DHL 200/204 döndüğünde DB kaydı <code>refunded</code> olarak işaretlenir.</div>
+
+        <h3>Başarılı Yanıt — HTTP 200 OK (DHL void desteklemiyor / yerel iptal)</h3>
+        <p>DHL Label API void işlemini ağırlıklı olarak <strong>domestic</strong> etiketler için destekler (API dokümanı: "Deleting an existing label (Domestic only)"). International (PLT) etikette <code>packageId</code> ve <code>dhlPackageId</code> ile "not found" (400.0000002) dönerse etiket yerel olarak <code>cancelled</code> işaretlenir. Bu durumda etiket DHL tarafında geçerli kalabilir; <strong>kullanılmamalıdır</strong>.</p>
+        <div class="code-block"><div class="code-label">Local Cancel Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "success": true,
+  "message": "Label cancelled locally. DHL's Label API does not support voiding international labels, so the label was not voided on DHL's side. Do not use this label.",
+  "shipmentId": "INT-CLIENT-1703123456789-INT",
+  "dhlPackageId": "33872610208778858",
+  "dhlVoided": false,
+  "localCancelled": true,
+  "attempts": [
+    { "identifier": "packageId", "value": "...", "statusCode": 400, "response": { } },
+    { "identifier": "dhlPackageId", "value": "...", "statusCode": 400, "response": { } }
+  ]
+}</code></pre></div>
+        <div class="note"><strong>Önemli:</strong> <code>dhlVoided: false</code> ise DHL tarafında iptal gerçekleşmemiştir. Etiket manifest edilmiş veya 45 günlük iptal süresi geçmiş olabilir; DHL hesap yöneticisi ile kontrol edilmelidir. <code>attempts</code> alanı hangi kimliğin denendiğini ve DHL yanıtını gösterir.</div>
+
+        <h3>Başarısız Yanıt (DHL erişim/validasyon hatası)</h3>
         <div class="code-block"><div class="code-label">Hata örneği</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
   "success": false,
-  "message": "Label not found"
+  "message": "DHL tarafında iptal başarısız oldu",
+  "dhl_response": {
+    "title": "Unauthorized or invalid pickup",
+    "type": "https://api.dhlecs.com/docs/errors/403.0000001"
+  },
+  "attempts": [
+    { "identifier": "packageId", "value": "...", "statusCode": 403, "response": { } }
+  ]
 }</code></pre></div>
+        <div class="note"><strong>Not:</strong> "not found" dışındaki DHL hatalarında (403 invalid pickup, 401 token vb.) DB kaydı değiştirilmez; hata doğrudan döner.</div>
       </section>
 
       <!-- ============================================================
@@ -702,13 +742,15 @@
             <tr><td><code>shipTo.addressLine1</code></td><td><code>consigneeAddress.address1</code></td><td><code>consigneeAddress.address1</code></td></tr>
             <tr><td><code>shipTo.stateOrRegion</code></td><td><code>consigneeAddress.state</code></td><td><code>consigneeAddress.state</code></td></tr>
             <tr><td><code>shipTo.countryCode</code></td><td><code>consigneeAddress.country</code> (her zaman "US")</td><td><code>consigneeAddress.country</code> (ISO 2: DE, CA, GB...)</td></tr>
+            <tr><td><code>shipTo.phoneNumber</code></td><td><code>consigneeAddress.phone</code></td><td><code>consigneeAddress.phone</code> (<code>phoneNumber</code> DHL şemasında geçersizdir)</td></tr>
+            <tr><td><code>shipFrom.phoneNumber</code></td><td><code>returnAddress.phone</code></td><td><code>returnAddress.phone</code></td></tr>
             <tr><td><code>shipFrom.postalCode</code></td><td><code>pickup</code> + <code>distributionCenter</code> mapping</td><td><code>pickup</code> + <code>distributionCenter</code> mapping (aynı)</td></tr>
             <tr><td><code>packages[].weight.unit</code></td><td><code>LB</code> (POUND→LB)</td><td><code>LB</code> (POUND→LB)</td></tr>
             <tr><td><code>packages[].dimensions.unit</code></td><td><code>IN</code> (INCH→IN)</td><td><code>IN</code> (INCH→IN)</td></tr>
             <tr><td><code>orderedProductId</code></td><td><strong>"GND"</strong> (Ground)</td><td><strong>"PLT"</strong> (Parcel International)</td></tr>
             <tr><td><code>service</code></td><td><strong>"DELCON"</strong></td><td><strong>"DELCON"</strong></td></tr>
             <tr><td><code>packages[].items</code></td><td>Yok (domestic gümrük yok)</td><td><strong>Zorunlu</strong> → <code>customsDetails</code> (root)</td></tr>
-            <tr><td>Rate endpoint</td><td><code>POST /shipping/v4/products</code></td><td><code>POST /shipping/v4/rates</code></td></tr>
+            <tr><td>Rate endpoint</td><td><code>POST /shipping/v4/products</code></td><td><code>POST /shipping/v4/products</code></td></tr>
             <tr><td>Label endpoint</td><td><code>POST /shipping/v4/label?format=PNG</code></td><td><code>POST /shipping/v4/label?format=PNG</code></td></tr>
           </tbody>
         </table></div>

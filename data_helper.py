@@ -182,7 +182,8 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(ship_to, "country", client_json.get("shipTo", {}).get("countryCode"))
     add_if(ship_to, "postalCode", client_json.get("shipTo", {}).get("postalCode"))
     add_if(ship_to, "email", client_json.get("shipTo", {}).get("email"))
-    add_if(ship_to, "phoneNumber", client_json.get("shipTo", {}).get("phoneNumber"))
+    # DHL Label API alan adı "phone" (phoneNumber DEĞİL). Yanlış alan adı → 400.0204003.
+    add_if(ship_to, "phone", client_json.get("shipTo", {}).get("phoneNumber") or client_json.get("shipTo", {}).get("phone"))
     add_if(payload, "consigneeAddress", ship_to)
     ship_from = {}
     add_if(ship_from, "name", client_json.get("shipFrom", {}).get("name"))
@@ -194,7 +195,7 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(ship_from, "country", client_json.get("shipFrom", {}).get("countryCode"))
     add_if(ship_from, "postalCode", client_json.get("shipFrom", {}).get("postalCode"))
     add_if(ship_from, "email", client_json.get("shipFrom", {}).get("email"))
-    add_if(ship_from, "phoneNumber", client_json.get("shipFrom", {}).get("phoneNumber"))
+    add_if(ship_from, "phone", client_json.get("shipFrom", {}).get("phoneNumber") or client_json.get("shipFrom", {}).get("phone"))
     add_if(payload, "returnAddress", ship_from)
 
     add_if(payload, "pickup", pickup_dict.get(ship_from.get("postalCode")))
@@ -284,7 +285,8 @@ def dhl_int_request_helper(client_json, client_id, r_type):
     add_if(ship_to, "country", client_json.get("shipTo", {}).get("countryCode"))  # ISO 2 harf
     add_if(ship_to, "postalCode", client_json.get("shipTo", {}).get("postalCode"))
     add_if(ship_to, "email", client_json.get("shipTo", {}).get("email"))
-    add_if(ship_to, "phoneNumber", client_json.get("shipTo", {}).get("phoneNumber"))
+    # DHL schema: consigneeAddress.phone (phoneNumber extraneous key → 400.0604001)
+    add_if(ship_to, "phone", client_json.get("shipTo", {}).get("phoneNumber") or client_json.get("shipTo", {}).get("phone"))
     add_if(payload, "consigneeAddress", ship_to)
     
     # Return/Sender (Gönderici) - International format
@@ -298,7 +300,8 @@ def dhl_int_request_helper(client_json, client_id, r_type):
     add_if(ship_from, "country", client_json.get("shipFrom", {}).get("countryCode"))
     add_if(ship_from, "postalCode", client_json.get("shipFrom", {}).get("postalCode"))
     add_if(ship_from, "email", client_json.get("shipFrom", {}).get("email"))
-    add_if(ship_from, "phoneNumber", client_json.get("shipFrom", {}).get("phoneNumber"))
+    # DHL schema: returnAddress.phone (phoneNumber DEĞİL)
+    add_if(ship_from, "phone", client_json.get("shipFrom", {}).get("phoneNumber") or client_json.get("shipFrom", {}).get("phone"))
     add_if(payload, "returnAddress", ship_from)
 
     # Pickup ve distribution center
