@@ -156,3 +156,5 @@ from rate_controller import *
 from dhl_label_controller import *
 
 from dhl_int_label_controller import *
+
+from rate_query_controller import *

@@ -514,24 +514,33 @@
   "originalAmount": 16.82
 }</code></pre></div>
 
-        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code> zaten <strong>%10 işlem ücreti eklenmiş</strong> haldedir. <code>originalAmount</code> DHL ham fiyatıdır.</div>
+        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code> zaten <strong>2$ işlem ücreti eklenmiş</strong> haldedir. <code>originalAmount</code> DHL ham fiyatıdır.</div>
       </section>
 
       <section class="section" id="int-label-create">
         <h2>4.2 Label Oluşturma (International)</h2>
-        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce rate alınır, %10 eklenir, sonra label üretilir.</p>
+        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce DHL rate alınır, 2$ eklenir. Ardından gümrük vergisi (duty) ve tax hesaplanır; etiket bu hesaplama başarılı olduktan sonra üretilir.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/create</code></div>
         
         <h3>İstek Gövdesi</h3>
-        <p>Rate sorgusuyla aynı gövde kullanılır. <code>isTestLabel</code> opsiyoneldir.</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Alan</th><th>Tip</th><th>Zorunlu</th><th>Açıklama</th></tr></thead>
-          <tbody>
-            <tr><td>insuranceFee</td><td>number</td><td>Opsiyonel</td><td>Sigorta ücreti. Gümrük ücreti hesabına dahil edilir. Verilmezse <code>0</code> kullanılır.</td></tr>
-          </tbody>
-        </table></div>
+        <p>Rate sorgusuyla aynı gövde kullanılır. Opsiyonel olarak <code>insuranceFee</code> gönderilebilir (verilmezse <code>0</code>).</p>
 
-        <div class="note"><strong>Maliyet:</strong> International yanıtında dönen <code>total_cost</code> değeri <strong>gönderi ücreti + gümrük ücreti</strong> toplamıdır.</div>
+        <div class="note"><strong>Gizli veriler:</strong> <code>amz_cost</code>, <code>my_cost</code>, <code>customs_value</code>, tax ve duty bilgileri müşteriye açılmaz; yalnızca veritabanında saklanır.</div>
+
+        <h3>Maliyet Hesabı</h3>
+        <p><code>amz_cost</code> = DHL ham fiyatı. <code>my_cost</code> = <code>amz_cost</code> + 2$. <code>customs_value</code> = <code>duty</code> + <code>tax</code>. <code>total_cost</code> = <code>my_cost</code> + <code>customs_value</code>.</p>
+
+        <div class="note"><strong>Yanıt:</strong> International yanıtında domestic yanıtındaki <code>totalCharge</code> alanının yerini <code>total_cost</code> alır. Etiket base64 (<code>labels[].labelData</code>), takip numarası (<code>labels[].trackingId</code>, <code>labels[].dhlPackageId</code>) ve domestic yanıtındaki diğer alanlar aynı şekilde döner.</div>
+
+        <h3>Gümrük Vergisi Hatası — HTTP 502</h3>
+        <p>Gümrük vergisi ve tax hesaplanamazsa etiket <strong>oluşturulmaz</strong> (DHL'den ücret alınmaz).</p>
+        <div class="code-block"><div class="code-label">Gümrük vergisi hata örneği</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "errors": [{
+    "code": "CustomsTaxCalculationFailed",
+    "details": "Customs duty and tax could not be calculated for this shipment. Please try again later.",
+    "message": "Customs tax calculation failed"
+  }]
+}</code></pre></div>
 
         <h3>Başarılı Yanıt — HTTP 200 OK</h3>
         <div class="code-block"><div class="code-label">International Label Create Response</div><button class="copy-button" type="button">Kopyala</button><pre><code>{

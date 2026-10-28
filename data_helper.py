@@ -8,6 +8,69 @@ def add_if(payload, key, value):
         return
     payload[key] = value
 
+
+_OZ_PER_LB = 16.0
+_OZ_UNITS = ("OZ", "OUNCE", "OUNCES")
+
+# Warehouse (shipFrom.postalCode) -> DHL pickup / distribution center
+PICKUP_DICT = {
+    "75081-1955": "5410014",
+    "75243-5485": "5410429",
+    "77407-9012": "5410448",
+    "75006-2527": "5411053",
+}
+
+DISTRIBUTION_CENTERS = {
+    "75081-1955": "USDFW1",
+    "75243-5485": "USDFW1",
+    "77407-9012": "USIAH1",
+    "75006-2527": "USDFW1",
+}
+
+
+def normalize_oz_weight(weight):
+    """
+    OZ cinsinden ağırlığı DHL'e uygun birime çevirir.
+
+    - 1 lb'nin altındaki değerler OZ olarak kalır (lb'ye çevrilmez).
+    - 1 lb ve üzerindeki değerler LB'ye çevrilir.
+    - Diğer birimler (LB, KG, ...) olduğu gibi bırakılır.
+    """
+    if not isinstance(weight, dict):
+        return weight
+
+    unit = str(weight.get("unit") or "").strip().upper()
+    if unit not in _OZ_UNITS:
+        return weight
+
+    try:
+        value = float(weight.get("value"))
+    except (TypeError, ValueError):
+        return weight
+
+    if value < _OZ_PER_LB:
+        weight["unit"] = "OZ"
+    else:
+        weight["unit"] = "LB"
+        weight["value"] = round(value / _OZ_PER_LB, 2)
+
+    return weight
+
+
+def normalize_package_weights(client_json):
+    """
+    İstekteki paket ve ürün ağırlıklarına OZ kuralını uygular.
+    İsteği yerinde (in-place) günceller ve geri döndürür.
+    """
+    for package in client_json.get("packages") or []:
+        normalize_oz_weight(package.get("weight"))
+
+        for item in package.get("items") or []:
+            normalize_oz_weight(item.get("weight"))
+
+    return client_json
+
+
 def request_helper(client_json, client_id, r_type):
     payload = {}
     ship_to = {}
@@ -165,9 +228,9 @@ def request_helper(client_json, client_id, r_type):
     return payload
 
 def dhl_request_helper(client_json, client_id, r_type):
-    pickup_dict = {"75081-1955":"5410014","75243-5485":"5410429","77407-9012": "5410448","75006-2527":"5411053"}
+    pickup_dict = PICKUP_DICT
     # ODF 
-    distributionCenter = {"75081-1955":"USDFW1","75243-5485":"USDFW1","77407-9012": "USIAH1","75006-2527":"USDFW1"}
+    distributionCenter = DISTRIBUTION_CENTERS
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}"
 
@@ -267,8 +330,8 @@ def dhl_int_request_helper(client_json, client_id, r_type):
     - weight customsDetails içinde YOK
     - customs, channelDetails root'ta YOK
     """
-    pickup_dict = {"75081-1955":"5410014","75243-5485":"5410429","77407-9012": "5410448","75006-2527":"5411053"}
-    distributionCenter = {"75081-1955":"USDFW1","75243-5485":"USDFW1","77407-9012": "USIAH1","75006-2527":"USDFW1"}
+    pickup_dict = PICKUP_DICT
+    distributionCenter = DISTRIBUTION_CENTERS
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}-INT"
 

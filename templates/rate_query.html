@@ -1,0 +1,722 @@
+{% extends "base.html" %}
+
+{% block title %}Rate Query | parkbey{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="mb-1">Rate Query</h2>
+    <p class="mb-0">DHL Domestic / International fiyat sorgulaması.</p>
+  </div>
+</div>
+
+<form id="rateQueryForm" novalidate>
+  <div class="orders-box p-3">
+
+    <!-- QUERY / CLIENT / WAREHOUSE -->
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label" for="queryMode">Query Type</label>
+        <select id="queryMode" class="form-select">
+          <option value="domestic" selected>Domestic</option>
+          <option value="international">International</option>
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label" for="clientId">Client</label>
+        <select id="clientId" class="form-select" required>
+          {% for client in clients %}
+          <option value="{{ client.id }}">{{ client.username }}</option>
+          {% endfor %}
+        </select>
+        {% if not clients %}
+        <div class="form-text text-danger">Aktif client bulunamadı.</div>
+        {% endif %}
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label" for="warehouse">Warehouse (Ship From)</label>
+        <select id="warehouse" class="form-select" required>
+          <option value="" selected disabled>Select warehouse...</option>
+          {% for warehouse in warehouses %}
+          <option value="{{ warehouse.zip }}">
+            {{ warehouse.zip }} · {{ warehouse.distribution_center }} · Pickup {{ warehouse.pickup }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <hr class="my-4">
+
+    <!-- SHIP FROM -->
+    <h6 class="mb-3">Ship From</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="shipFromName">Name</label>
+        <input type="text" id="shipFromName" class="form-control" placeholder="RV-TX Warehouse">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="shipFromCompany">Company Name</label>
+        <input type="text" id="shipFromCompany" class="form-control" placeholder="RV-TX">
+      </div>
+      <div class="col-md-8">
+        <label class="form-label" for="shipFromAddress1">Address Line 1</label>
+        <input type="text" id="shipFromAddress1" class="form-control" placeholder="18120 West Bellfort, Ste G">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromAddress2">Address Line 2</label>
+        <input type="text" id="shipFromAddress2" class="form-control">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromCity">City</label>
+        <input type="text" id="shipFromCity" class="form-control" placeholder="Richmond">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromState">State / Region</label>
+        <input type="text" id="shipFromState" class="form-control" placeholder="TX" maxlength="2">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromCountry">Country Code</label>
+        <input type="text" id="shipFromCountry" class="form-control" value="US" maxlength="2">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromPostal">Postal Code</label>
+        <input type="text" id="shipFromPostal" class="form-control" readonly required
+               placeholder="Select warehouse">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromPhone">Phone</label>
+        <input type="text" id="shipFromPhone" class="form-control">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipFromEmail">E-mail</label>
+        <input type="email" id="shipFromEmail" class="form-control">
+      </div>
+    </div>
+
+    <hr class="my-4">
+
+    <!-- SHIP TO -->
+    <h6 class="mb-3">Ship To</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="shipToName">Name</label>
+        <input type="text" id="shipToName" class="form-control" required placeholder="Forrest Gump">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="shipToCompany">Company Name</label>
+        <input type="text" id="shipToCompany" class="form-control">
+      </div>
+      <div class="col-md-8">
+        <label class="form-label" for="shipToAddress1">Address Line 1</label>
+        <input type="text" id="shipToAddress1" class="form-control" required placeholder="102 Market St">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToAddress2">Address Line 2</label>
+        <input type="text" id="shipToAddress2" class="form-control" placeholder="STE 120">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToCity">City</label>
+        <input type="text" id="shipToCity" class="form-control" required placeholder="Sanfrancisco">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToState">State / Region</label>
+        <input type="text" id="shipToState" class="form-control" placeholder="CA">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToCountry">Country Code</label>
+        <input type="text" id="shipToCountry" class="form-control" value="US" maxlength="2" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToPostal">Postal Code</label>
+        <input type="text" id="shipToPostal" class="form-control" required placeholder="94102">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToPhone">Phone</label>
+        <input type="text" id="shipToPhone" class="form-control" placeholder="555 555 55 55">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="shipToEmail">E-mail</label>
+        <input type="email" id="shipToEmail" class="form-control" required placeholder="1234@gmail.com">
+      </div>
+    </div>
+
+    <hr class="my-4">
+
+    <!-- PACKAGE -->
+    <h6 class="mb-3">Package</h6>
+    <div class="row g-3">
+      <div class="col-md-2">
+        <label class="form-label" for="weightValue">Weight</label>
+        <input type="number" id="weightValue" class="form-control" value="0.5" min="0.01" step="0.01" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="weightUnit">Weight Unit</label>
+        <select id="weightUnit" class="form-select">
+          <option value="POUND" selected>POUND</option>
+          <option value="LB">LB</option>
+          <option value="OZ">OZ</option>
+          <option value="KG">KG</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="dimLength">Length</label>
+        <input type="number" id="dimLength" class="form-control" value="12" min="1" step="0.1" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="dimWidth">Width</label>
+        <input type="number" id="dimWidth" class="form-control" value="10" min="1" step="0.1" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="dimHeight">Height</label>
+        <input type="number" id="dimHeight" class="form-control" value="8" min="1" step="0.1" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="dimUnit">Dimension Unit</label>
+        <input type="text" id="dimUnit" class="form-control" value="INCH" readonly>
+      </div>
+    </div>
+
+    <!-- CUSTOMS ITEMS (INTERNATIONAL) -->
+    <div id="itemsSection" class="d-none">
+      <hr class="my-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h6 class="mb-0">Customs Items</h6>
+          <small class="text-muted">International gönderiler için en az 1 ürün zorunludur.</small>
+        </div>
+        <button type="button" id="addItemBtn" class="btn btn-sm btn-secondary">+ Add Item</button>
+      </div>
+      <div id="itemsContainer"></div>
+    </div>
+
+    <hr class="my-4">
+
+    <!-- OPTIONS -->
+    <div class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label" for="marketPlace">Marketplace</label>
+        <input type="text" id="marketPlace" class="form-control" value="Etsy" required>
+      </div>
+      <div class="col-md-4">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" id="isTestLabel">
+          <label class="form-check-label" for="isTestLabel">Test modu (sandbox)</label>
+        </div>
+      </div>
+      <div class="col-md-4 d-flex justify-content-md-end gap-2">
+        <button type="submit" id="submitBtn" class="btn btn-primary">
+          <span id="submitSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+          <span id="submitLabel">Sorgula</span>
+        </button>
+        <button type="button" id="resetBtn" class="btn btn-secondary">Sıfırla</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<!-- ERROR -->
+<div id="errorBox" class="alert alert-danger mt-3 d-none" role="alert">
+  <strong>İstek başarısız oldu.</strong>
+  <pre id="errorText" class="mb-0 mt-2" style="white-space: pre-wrap; word-break: break-word;"></pre>
+</div>
+
+<!-- RESULT -->
+<div id="resultCard" class="orders-box p-3 mt-3 d-none">
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h5 class="mb-1">Rate Sonucu</h5>
+      <small id="resultModeLabel" class="text-muted"></small>
+    </div>
+    <span id="resultStatus" class="badge text-bg-success"></span>
+  </div>
+
+  <div class="rate-price-box mb-3">
+    <div class="rate-price-label">Toplam Fiyat</div>
+    <div id="resultPrice" class="rate-price">-</div>
+  </div>
+
+  <div id="productInfo"></div>
+
+  <details class="mt-3">
+    <summary class="text-muted">Ham yanıt (JSON)</summary>
+    <pre id="rawJson" class="mt-2 p-3 bg-light rounded" style="max-height: 420px; overflow: auto;"></pre>
+  </details>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<style>
+  .rate-price-box {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .rate-price-label {
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  .rate-price {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+  }
+  .item-row {
+    background: #f8fafc;
+  }
+  #rateQueryForm.is-pending {
+    opacity: .75;
+  }
+</style>
+
+<script>
+(function () {
+  const form = document.getElementById('rateQueryForm');
+  const modeEl = document.getElementById('queryMode');
+  const clientEl = document.getElementById('clientId');
+  const warehouseEl = document.getElementById('warehouse');
+  const itemsSection = document.getElementById('itemsSection');
+  const itemsContainer = document.getElementById('itemsContainer');
+  const addItemBtn = document.getElementById('addItemBtn');
+  const submitBtn = document.getElementById('submitBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const submitSpinner = document.getElementById('submitSpinner');
+  const submitLabel = document.getElementById('submitLabel');
+  const errorBox = document.getElementById('errorBox');
+  const errorText = document.getElementById('errorText');
+  const resultCard = document.getElementById('resultCard');
+  const resultPrice = document.getElementById('resultPrice');
+  const resultStatus = document.getElementById('resultStatus');
+  const resultModeLabel = document.getElementById('resultModeLabel');
+  const productInfo = document.getElementById('productInfo');
+  const rawJson = document.getElementById('rawJson');
+
+  let isSubmitting = false;
+
+  const byId = (id) => document.getElementById(id);
+  const valueOf = (id) => (byId(id) ? byId(id).value.trim() : '');
+  const numberOf = (id) => {
+    const raw = valueOf(id);
+    return raw === '' ? null : Number(raw);
+  };
+
+  function setPending(pending) {
+    isSubmitting = pending;
+
+    submitBtn.disabled = pending;
+    resetBtn.disabled = pending;
+    submitSpinner.classList.toggle('d-none', !pending);
+    submitLabel.textContent = pending ? 'Sorgulanıyor...' : 'Sorgula';
+    form.classList.toggle('is-pending', pending);
+
+    form.querySelectorAll('input, select, button').forEach((el) => {
+      if (el === submitBtn) return;
+      el.disabled = pending;
+    });
+
+    document.body.style.cursor = pending ? 'progress' : '';
+  }
+
+  function hideError() {
+    errorBox.classList.add('d-none');
+    errorText.textContent = '';
+  }
+
+  function showError(message) {
+    errorText.textContent = message || 'Bilinmeyen hata';
+    errorBox.classList.remove('d-none');
+    errorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function hideResult() {
+    resultCard.classList.add('d-none');
+    resultPrice.textContent = '-';
+    productInfo.innerHTML = '';
+    rawJson.textContent = '';
+  }
+
+  function extractError(data, status) {
+    if (data && Array.isArray(data.errors) && data.errors.length) {
+      return data.errors.map((error) => {
+        if (typeof error === 'string') return error;
+        const details = Array.isArray(error.details)
+          ? error.details.join('; ')
+          : error.details;
+        return [error.message, details, error.code]
+          .filter(Boolean)
+          .join(' — ');
+      }).join('\n');
+    }
+
+    if (data && data.error) {
+      if (typeof data.error === 'object') {
+        const details = Array.isArray(data.error.details)
+          ? data.error.details.join('; ')
+          : data.error.details;
+        return [data.error.message, details].filter(Boolean).join(': ')
+          || JSON.stringify(data.error);
+      }
+      return String(data.error);
+    }
+
+    if (data && data.message) return String(data.message);
+
+    if (data && data.dhl_response) {
+      return typeof data.dhl_response === 'string'
+        ? data.dhl_response
+        : JSON.stringify(data.dhl_response, null, 2);
+    }
+
+    if (data) return JSON.stringify(data, null, 2);
+
+    return 'HTTP ' + status;
+  }
+
+  function infoRow(label, value) {
+    if (value === null || value === undefined || value === '') return '';
+    return '<tr><th class="text-muted fw-normal" style="width: 180px;">' + escapeHtml(label) +
+      '</th><td>' + escapeHtml(String(value)) + '</td></tr>';
+  }
+
+  function escapeHtml(text) {
+    return String(text)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function showResult(data, status, mode) {
+    const rate = (data && data.rate) || null;
+    const totalCharge = (data && data.totalCharge) || null;
+
+    let amount = rate && rate.amount !== undefined ? Number(rate.amount) : null;
+    let currency = (rate && rate.currency)
+      || (totalCharge && totalCharge.unit)
+      || 'USD';
+
+    if ((amount === null || Number.isNaN(amount)) && totalCharge) {
+      amount = Number(totalCharge.value);
+    }
+
+    if (amount !== null && !Number.isNaN(amount)) {
+      resultPrice.textContent = '$' + amount.toFixed(2) + ' ' + currency;
+    } else {
+      resultPrice.textContent = 'Fiyat bulunamadı';
+    }
+
+    resultStatus.textContent = 'HTTP ' + status;
+    resultStatus.className = 'badge text-bg-success';
+    resultModeLabel.textContent = mode === 'international' ? 'International' : 'Domestic';
+
+    const rows = [
+      infoRow('Product Name', data && data.productName),
+      infoRow('Ordered Product ID', data && data.orderedProductId),
+      infoRow('Description', data && data.description),
+      infoRow('Tracking Available', data && data.trackingAvailable),
+      infoRow('Price Zone', rate && rate.priceZone),
+      infoRow('Effective From', rate && rate.effectiveFrom),
+      infoRow('Currency', currency)
+    ].filter(Boolean).join('');
+
+    productInfo.innerHTML = rows
+      ? '<div class="table-responsive"><table class="table table-sm mb-0"><tbody>' + rows + '</tbody></table></div>'
+      : '<p class="mb-0">Ürün bilgisi bulunamadı.</p>';
+
+    rawJson.textContent = JSON.stringify(data, null, 2);
+
+    resultCard.classList.remove('d-none');
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function itemRowHtml() {
+    return `
+      <div class="border rounded p-3 mb-3 item-row">
+        <div class="d-flex justify-content-end mb-2">
+          <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">Remove</button>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Description</label>
+            <input type="text" class="form-control item-description item-required" placeholder="Wireless Bluetooth Headphones">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Quantity</label>
+            <input type="number" class="form-control item-quantity item-required" value="1" min="1" step="1">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Item Value</label>
+            <input type="number" class="form-control item-value item-required" value="29.99" min="0" step="0.01">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Currency</label>
+            <select class="form-select item-currency">
+              <option value="USD" selected>USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Weight</label>
+            <input type="number" class="form-control item-weight item-required" value="0.5" min="0.01" step="0.01">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Weight Unit</label>
+            <select class="form-select item-weight-unit">
+              <option value="LB" selected>LB</option>
+              <option value="OZ">OZ</option>
+              <option value="KG">KG</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">HS Code</label>
+            <input type="text" class="form-control item-hs item-required" placeholder="8518.30.0000">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Origin Country</label>
+            <input type="text" class="form-control item-origin item-required" placeholder="CN" maxlength="2">
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function addItem() {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = itemRowHtml();
+    const row = wrapper.firstElementChild;
+
+    row.querySelector('.remove-item-btn').addEventListener('click', () => {
+      if (isSubmitting) return;
+      row.remove();
+      applyMode();
+    });
+
+    itemsContainer.appendChild(row);
+    applyMode();
+  }
+
+  function applyMode() {
+    const isInternational = modeEl.value === 'international';
+
+    itemsSection.classList.toggle('d-none', !isInternational);
+
+    itemsContainer.querySelectorAll('.item-required').forEach((el) => {
+      el.required = isInternational;
+    });
+
+    if (isInternational && itemsContainer.querySelectorAll('.item-row').length === 0) {
+      addItem();
+    }
+  }
+
+  function collectItems() {
+    return Array.from(itemsContainer.querySelectorAll('.item-row')).map((row) => {
+      const get = (selector) => {
+        const el = row.querySelector(selector);
+        return el ? el.value.trim() : '';
+      };
+
+      return {
+        description: get('.item-description'),
+        quantity: Number(get('.item-quantity') || 1),
+        itemValue: {
+          value: Number(get('.item-value')),
+          unit: get('.item-currency') || 'USD'
+        },
+        weight: {
+          value: Number(get('.item-weight')),
+          unit: get('.item-weight-unit') || 'LB'
+        },
+        hsCode: get('.item-hs'),
+        originCountry: get('.item-origin').toUpperCase()
+      };
+    });
+  }
+
+  function clean(value) {
+    if (Array.isArray(value)) {
+      return value.map(clean).filter((item) => item !== undefined);
+    }
+
+    if (value && typeof value === 'object') {
+      const output = {};
+      Object.entries(value).forEach(([key, entry]) => {
+        const cleaned = clean(entry);
+        if (cleaned !== undefined) output[key] = cleaned;
+      });
+      return Object.keys(output).length ? output : undefined;
+    }
+
+    if (value === null || value === undefined || value === '') return undefined;
+    if (typeof value === 'number' && Number.isNaN(value)) return undefined;
+
+    return value;
+  }
+
+  function buildPayload() {
+    const isInternational = modeEl.value === 'international';
+
+    const packageData = {
+      dimensions: {
+        length: numberOf('dimLength'),
+        width: numberOf('dimWidth'),
+        height: numberOf('dimHeight'),
+        unit: valueOf('dimUnit') || 'INCH'
+      },
+      weight: {
+        unit: valueOf('weightUnit'),
+        value: numberOf('weightValue')
+      }
+    };
+
+    if (isInternational) {
+      packageData.items = collectItems();
+    }
+
+    return clean({
+      shipFrom: {
+        name: valueOf('shipFromName'),
+        companyName: valueOf('shipFromCompany'),
+        addressLine1: valueOf('shipFromAddress1'),
+        addressLine2: valueOf('shipFromAddress2'),
+        city: valueOf('shipFromCity'),
+        stateOrRegion: valueOf('shipFromState'),
+        countryCode: valueOf('shipFromCountry').toUpperCase(),
+        postalCode: valueOf('shipFromPostal'),
+        email: valueOf('shipFromEmail'),
+        phoneNumber: valueOf('shipFromPhone')
+      },
+      shipTo: {
+        name: valueOf('shipToName'),
+        companyName: valueOf('shipToCompany'),
+        addressLine1: valueOf('shipToAddress1'),
+        addressLine2: valueOf('shipToAddress2'),
+        city: valueOf('shipToCity'),
+        stateOrRegion: valueOf('shipToState'),
+        countryCode: valueOf('shipToCountry').toUpperCase(),
+        postalCode: valueOf('shipToPostal'),
+        email: valueOf('shipToEmail'),
+        phoneNumber: valueOf('shipToPhone')
+      },
+      packages: [packageData],
+      marketPlace: valueOf('marketPlace'),
+      isTestLabel: byId('isTestLabel').checked
+    });
+  }
+
+  modeEl.addEventListener('change', () => {
+    if (isSubmitting) return;
+    applyMode();
+  });
+
+  warehouseEl.addEventListener('change', () => {
+    if (isSubmitting) return;
+    if (warehouseEl.value) {
+      byId('shipFromPostal').value = warehouseEl.value;
+      byId('shipFromCountry').value = 'US';
+    }
+  });
+
+  addItemBtn.addEventListener('click', () => {
+    if (isSubmitting) return;
+    addItem();
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+
+    if (!clientEl.value) {
+      showError('Lütfen bir client seçin.');
+      return;
+    }
+
+    if (!form.reportValidity()) return;
+
+    const mode = modeEl.value;
+
+    if (mode === 'international' && itemsContainer.querySelectorAll('.item-row').length === 0) {
+      addItem();
+      if (!form.reportValidity()) return;
+    }
+
+    const payload = buildPayload();
+    if (!payload) {
+      showError('Gönderilecek veri oluşturulamadı.');
+      return;
+    }
+
+    hideError();
+    hideResult();
+    setPending(true);
+
+    try {
+      const response = await fetch('{{ url_for("rate_query_request") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: mode,
+          client_id: Number(clientEl.value),
+          payload: payload
+        })
+      });
+
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (parseError) {
+        body = null;
+      }
+
+      if (!response.ok) {
+        showError(extractError(body, response.status));
+        return;
+      }
+
+      showResult(body, response.status, mode);
+    } catch (error) {
+      showError('İstek gönderilemedi: ' + error.message);
+    } finally {
+      setPending(false);
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    if (isSubmitting) return;
+
+    form.reset();
+    itemsContainer.innerHTML = '';
+    addItem();
+
+    modeEl.value = 'domestic';
+    applyMode();
+
+    hideError();
+    hideResult();
+  });
+
+  window.addEventListener('beforeunload', (event) => {
+    if (!isSubmitting) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  // Sorgu sürerken sayfa içi linklerle ayrılmayı engelle
+  document.addEventListener('click', (event) => {
+    if (!isSubmitting) return;
+    const link = event.target.closest('a');
+    if (link) event.preventDefault();
+  }, true);
+
+  // İlk yükleme
+  applyMode();
+})();
+</script>
+{% endblock %}

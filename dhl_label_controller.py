@@ -3,7 +3,7 @@ from flask import request, jsonify, g
 from model import ShipmentLog, Label
 import time
 import requests
-from data_helper import dhl_request_helper
+from data_helper import dhl_request_helper, normalize_package_weights
 from dhl_service import get_dhl_token
 from decimal import Decimal
 
@@ -87,6 +87,7 @@ def dhl_rate_label():
         ]}), 429
 
     data = request.json or {}
+    normalize_package_weights(data)
 
     marketPlace = data.get("marketPlace", "xxxx2")
     if marketPlace.lower() in ["xxxx", "xxxx1"]:
@@ -177,6 +178,7 @@ def dhl_create_label():
         ]}), 429
 
     data = request.json or {}
+    normalize_package_weights(data)
 
     marketPlace = data.get("marketPlace", "xxxx2")
     if marketPlace.lower() in ["xxxx", "xxxx1"]:

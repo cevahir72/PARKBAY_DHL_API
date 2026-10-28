@@ -3,8 +3,9 @@ from flask import request, jsonify, g
 from model import ShipmentLog, InternationalLabel
 import time
 import requests
-from data_helper import dhl_int_request_helper
+from data_helper import dhl_int_request_helper, normalize_package_weights
 from dhl_service import get_dhl_token
+from easyship_service import calculate_for_dhl_request
 from decimal import Decimal
 from datetime import datetime
 
@@ -93,6 +94,7 @@ def dhl_int_rate_label():
         ]}), 429
 
     data = request.json or {}
+    normalize_package_weights(data)
 
     # Marketplace validasyonu (mevcut ile aynı)
     marketPlace = data.get("marketPlace", "xxxx2")
@@ -248,6 +250,7 @@ def dhl_int_create_label():
         ]}), 429
 
     data = request.json or {}
+    normalize_package_weights(data)
 
     marketPlace = data.get("marketPlace", "xxxx2")
     if marketPlace.lower() in ["xxxx", "xxxx1"]:
@@ -369,6 +372,69 @@ def dhl_int_create_label():
     if rate_status_code != 200 or final_rate == 0:
         return jsonify(rate_response_data), rate_status_code
 
+    # ---------------------------------------------------------
+    # 2.1 GÜMRÜK VERGİSİ (Easyship Taxes & Duties - sunucu içi)
+    # ---------------------------------------------------------
+    # Easyship kimlik bilgisi ve istek gövdesi müşteriye açılmaz; API
+    # içinde (DHL isteğinden) üretilir. Easyship yanıtındaki duty + tax
+    # toplamı customs_value alanına yazılır. Label oluşturulmadan önce
+    # hesaplanır; hesaplanamazsa etiket oluşturulmaz.
+    first_package = data.get("packages", [{}])[0] if data.get("packages") else {}
+    first_item = (
+        first_package.get("items", [{}])[0]
+        if first_package.get("items")
+        else {}
+    )
+
+    customs_currency = str(
+        (first_item.get("itemValue") or {}).get("unit") or "USD"
+    ).upper()
+    customs_tax = None
+    customs_duty = None
+    customs_value = 0.0
+
+    easyship_result = {}
+    try:
+        easyship_result = calculate_for_dhl_request(
+            data,
+            shipment_charge=final_rate,
+            insurance_fee=data.get("insuranceFee", data.get("insurance_fee", 0)),
+        )
+    except Exception as error:
+        app.logger.exception(
+            "Easyship taxes & duties call failed unexpectedly. client_id=%s",
+            client.id,
+        )
+        easyship_result = {"success": False, "error": str(error)}
+
+    if not easyship_result.get("success"):
+        app.logger.warning(
+            "Easyship taxes & duties could not be calculated. "
+            "client_id=%s error=%s",
+            client.id,
+            easyship_result.get("error"),
+        )
+
+        return jsonify({"errors": [{
+            "code": "CustomsTaxCalculationFailed",
+            "details": (
+                "Customs duty and tax could not be calculated for this "
+                "shipment. Please try again later."
+            ),
+            "message": "Customs tax calculation failed"
+        }]}), 502
+
+    customs_value = easyship_result["total"]
+    customs_currency = str(
+        easyship_result.get("currency") or customs_currency
+    ).upper()
+    customs_tax = easyship_result["tax"]
+    customs_duty = easyship_result["duty"]
+
+    # total_cost = my_cost + customs_value
+    my_cost_value = round(float(final_rate), 2)
+    total_cost = round(my_cost_value + float(customs_value), 2)
+
     # 🔸 ADIM 2: Label oluştur
     dhl_payload = dhl_int_request_helper(data, client.reference_code, "create")
 
@@ -457,19 +523,39 @@ def dhl_int_create_label():
     label.pop("labelDetail", None)
     label.pop("link", None)
 
-    label["totalCharge"] = {
-        "unit": "USD",
-        "value": final_rate
-    }
-
     label["shipmentId"] = shipment_id
+    label.setdefault("trackingId", tracking_number)
     label.pop("packageId", None)
 
+    # ---------------------------------------------------------
+    # 2.2 Sadece total_cost yanıta eklensin
+    # ---------------------------------------------------------
+    # total_cost = my_cost + customs_value
+    # amz_cost, my_cost ve customs_value DB'de kalır; API yanıtında
+    # başka bir sayısal maliyet alanı dönmez.
+    for numeric_field in (
+        "totalCharge",
+        "customsValue",
+        "customsCurrency",
+        "customsTax",
+        "customsDuty",
+    ):
+        label.pop(numeric_field, None)
+
+    label["total_cost"] = total_cost
+
     record = {
-        "totalCharge": Decimal(str(round(final_rate, 2))),
+        "totalCharge": Decimal(str(my_cost_value)),
+        "total_cost": total_cost,
         "trackingId": tracking_number,
         "shipmentId": shipment_id
     }
+
+    if customs_value is not None:
+        record["customsValue"] = str(customs_value)
+    if customs_tax is not None:
+        record["customsTax"] = customs_tax
+        record["customsDuty"] = customs_duty
 
     response_value = str(record)
 
@@ -513,10 +599,6 @@ def dhl_int_create_label():
             ]
             to_address = ", ".join(str(f) for f in to_fields if f)
 
-            # İlk paketin ilk item'ından gümrük bilgilerini al
-            first_package = data.get("packages", [{}])[0]
-            first_item = first_package.get("items", [{}])[0] if first_package.get("items") else {}
-
             int_label_record = InternationalLabel(
                 client_id=client.id,
                 pickup_id=dhl_pickup_id,
@@ -538,10 +620,11 @@ def dhl_int_create_label():
                 service=response_to_return.get("orderedProductId", "DHL_International"),
                 tracking_number=tracking_number,
                 amz_cost=Decimal(str(dhl_original_rate)),
-                my_cost=Decimal(str(round(final_rate, 2))),
-                # Gümrük alanları
-                customs_value=first_item.get("itemValue", {}).get("value"),
-                customs_currency=first_item.get("itemValue", {}).get("unit", "USD"),
+                my_cost=Decimal(str(my_cost_value)),
+                # Gümrük alanları (Easyship duty + tax)
+                customs_value=Decimal(str(customs_value)),
+                total_cost=Decimal(str(total_cost)),
+                customs_currency=customs_currency,
                 hs_code=first_item.get("hsCode") or first_item.get("itemIdentifier"),
                 origin_country=first_item.get("originCountry"),
                 item_description=first_item.get("description"),

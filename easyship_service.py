@@ -1,21 +1,33 @@
 # easyship_service.py
 """
-Easyship Taxes & Duties API entegrasyonu.
+Easyship Taxes & Duties API entegrasyonu (sunucu tarafı).
 
-DHL International rate/label yanıtı gümrük vergisi ve tax tutarını
-döndürmediği için bu değerler label oluşturulurken Easyship üzerinden
-hesaplanır.
+Müşteriler Easyship'i bilmez; bearer token ve istek gövdesi API içinde
+(admin tarafında) yönetilir. Bu servis DHL International label isteğinden
+Easyship `taxes_and_duties` gövdesini üretir, Easyship'ten gelen duty + tax
+toplamını `customs_value` olarak döner.
 
 EASYSHIP_API_KEY .env / ortam değişkenlerinden okunur.
-
-Ülke kodları Easyship'e country ID olarak değil, ISO alpha2 kodu olarak
-gönderilir (US, DE, CN gibi).
+EASYSHIP_BASE_URL ile base URL değiştirilebilir.
 
 Endpoint:
-- https://public-api.easyship.com/2024-09/taxes_and_duties
+- POST https://public-api.easyship.com/2024-09/taxes_and_duties
 
-Sandbox/production ayrımı yoktur; tek bir base URL kullanılır.
-Canlıya alırken EASYSHIP_BASE_URL değeri elle değiştirilir.
+Üretilen gövde:
+{
+  "destination_country_alpha2": "DE",
+  "origin_country_alpha2": "US",
+  "insurance_fee": 0,
+  "shipment_charge": 15.0,
+  "currency": "USD",
+  "items": [
+    {
+      "duty_origin_country_alpha2": "US",
+      "hs_code": "85183000",
+      "customs_value": 29.99
+    }
+  ]
+}
 """
 
 import os
@@ -24,8 +36,6 @@ import requests
 
 
 _API_VERSION = "2024-09"
-
-# Tek base URL. Canlı ortam için burayı elle değiştirin.
 _DEFAULT_BASE_URL = "https://public-api.easyship.com"
 
 
@@ -46,15 +56,14 @@ def _headers(api_key):
     }
 
 
-def _request(method, path, api_key, **kwargs):
-    url = f"{_get_base_url()}/{_API_VERSION}/{path.lstrip('/')}"
+def _request(api_key, body):
+    url = f"{_get_base_url()}/{_API_VERSION}/taxes_and_duties"
 
-    return requests.request(
-        method,
+    return requests.post(
         url,
         headers=_headers(api_key),
-        timeout=(3, 10),
-        **kwargs
+        json=body,
+        timeout=(5, 15),
     )
 
 
@@ -93,7 +102,6 @@ def build_taxes_items(client_json):
     DHL label isteğindeki packages[].items verisini Easyship formatına çevirir.
 
     Aynı HS kodu + menşe ülke kombinasyonundaki ürünler tek satırda toplanır.
-    Ülke kodları alpha2 olarak döner.
     Dönen değer: (items, currency)
     """
     ship_from = client_json.get("shipFrom") or {}
@@ -132,8 +140,8 @@ def build_taxes_items(client_json):
 
     items = [
         {
+            "duty_origin_country_alpha2": origin_country,
             "hs_code": hs_code,
-            "origin_country_alpha2": origin_country,
             "customs_value": round(total_value, 2),
         }
         for (hs_code, origin_country), total_value in grouped_values.items()
@@ -142,18 +150,37 @@ def build_taxes_items(client_json):
     return items, (str(currency).upper() if currency else "USD")
 
 
-def _build_payload(
-    origin_country,
-    destination_country,
+def build_payload(
+    origin_country_alpha2,
+    destination_country_alpha2,
     items,
     shipment_charge,
-    insurance_fee,
-    currency,
+    insurance_fee=0.0,
+    currency="USD",
 ):
-    payload_items = []
+    """Easyship taxes_and_duties istek gövdesini üretir."""
+    origin_country = _normalize_alpha2(origin_country_alpha2)
+    destination_country = _normalize_alpha2(destination_country_alpha2)
 
+    if not origin_country or not destination_country:
+        raise ValueError("origin/destination country code is missing or invalid")
+
+    if not items:
+        raise ValueError("No valid customs items for Easyship calculation")
+
+    shipment_charge = _to_float(shipment_charge)
+    if shipment_charge is None:
+        raise ValueError("shipment_charge is not a number")
+
+    insurance_fee = _to_float(insurance_fee)
+    if insurance_fee is None:
+        insurance_fee = 0.0
+
+    currency = str(currency or "USD").upper()
+
+    payload_items = []
     for item in items:
-        item_origin = _normalize_alpha2(item.get("origin_country_alpha2"))
+        item_origin = _normalize_alpha2(item.get("duty_origin_country_alpha2"))
         hs_code = _normalize_hs_code(item.get("hs_code"))
         customs_value = _to_float(item.get("customs_value"))
 
@@ -170,16 +197,16 @@ def _build_payload(
         raise ValueError("No valid Easyship items")
 
     return {
-        "origin_country_alpha2": origin_country,
         "destination_country_alpha2": destination_country,
-        "insurance_fee": float(insurance_fee or 0),
-        "shipment_charge": float(shipment_charge),
+        "origin_country_alpha2": origin_country,
+        "insurance_fee": insurance_fee,
+        "shipment_charge": shipment_charge,
         "currency": currency,
         "items": payload_items,
     }
 
 
-def _parse_response(response, currency):
+def _parse_response(response, fallback_currency):
     try:
         response_data = response.json()
     except ValueError:
@@ -223,63 +250,42 @@ def _parse_response(response, currency):
         "success": True,
         "tax": round(tax, 2),
         "duty": round(duty, 2),
+        # customs_value olarak kaydedilecek toplam gümrük tutarı
         "total": round(tax + duty, 2),
-        "currency": tax_and_duty.get("currency") or currency,
+        "currency": tax_and_duty.get("currency") or fallback_currency,
         "request_id": (response_data.get("meta") or {}).get("request_id"),
         "api_version": _API_VERSION,
         "raw": response_data,
     }
 
 
-def calculate_taxes_and_duties(
-    origin_country_alpha2,
-    destination_country_alpha2,
-    items,
-    shipment_charge,
-    insurance_fee=0.0,
-    currency="USD",
-):
+def calculate_taxes_and_duties(body):
     """
-    Easyship Taxes & Duties hesaplaması yapar.
+    Verilen Easyship Taxes & Duties gövdesini gönderir ve sonucu döner.
 
-    Ülke kodları alpha2 olarak gönderilir. Dönen sözlük:
+    Dönen sözlük:
     {
         "success": bool,
         "tax": float,
         "duty": float,
-        "total": float,          # tax + duty
+        "total": float,          # tax + duty (customs_value)
         "currency": str,
         "error": str | None,
         ...
     }
     """
-    origin_country = _normalize_alpha2(origin_country_alpha2)
-    destination_country = _normalize_alpha2(destination_country_alpha2)
-
-    if not origin_country or not destination_country:
+    if not isinstance(body, dict) or not body:
         return {
             "success": False,
-            "error": "origin/destination country code is missing or invalid",
+            "error": "Easyship body must be a non-empty JSON object",
         }
 
-    if not items:
+    items = body.get("items")
+    if not isinstance(items, list) or not items:
         return {
             "success": False,
-            "error": "No valid customs items for Easyship calculation",
+            "error": "Easyship body must contain a non-empty items array",
         }
-
-    shipment_charge = _to_float(shipment_charge)
-    if shipment_charge is None:
-        return {
-            "success": False,
-            "error": "shipment_charge is not a number",
-        }
-
-    insurance_fee = _to_float(insurance_fee)
-    if insurance_fee is None:
-        insurance_fee = 0.0
-
-    currency = str(currency or "USD").upper()
 
     api_key = _get_api_key()
     if not api_key:
@@ -288,25 +294,10 @@ def calculate_taxes_and_duties(
             "error": "EASYSHIP_API_KEY is not configured",
         }
 
-    try:
-        payload = _build_payload(
-            origin_country=origin_country,
-            destination_country=destination_country,
-            items=items,
-            shipment_charge=shipment_charge,
-            insurance_fee=insurance_fee,
-            currency=currency,
-        )
-    except ValueError as error:
-        return {"success": False, "error": str(error), "api_version": _API_VERSION}
+    currency = str(body.get("currency") or "USD").upper()
 
     try:
-        response = _request(
-            "POST",
-            "taxes_and_duties",
-            api_key,
-            json=payload,
-        )
+        response = _request(api_key, body)
     except requests.RequestException as error:
         return {
             "success": False,
@@ -318,17 +309,27 @@ def calculate_taxes_and_duties(
 
 
 def calculate_for_dhl_request(client_json, shipment_charge, insurance_fee=0.0):
-    """DHL label isteğinden Easyship Taxes & Duties sonucu üretir."""
+    """
+    DHL International label isteğinden Easyship Taxes & Duties sonucu üretir.
+
+    Country, HS kodu, customs_value (eşya değeri) ve para birimi DHL
+    isteğinden alınır; Easyship kimlik bilgisi sunucudadır.
+    """
     ship_from = client_json.get("shipFrom") or {}
     ship_to = client_json.get("shipTo") or {}
 
     items, currency = build_taxes_items(client_json)
 
-    return calculate_taxes_and_duties(
-        origin_country_alpha2=ship_from.get("countryCode"),
-        destination_country_alpha2=ship_to.get("countryCode"),
-        items=items,
-        shipment_charge=shipment_charge,
-        insurance_fee=insurance_fee,
-        currency=currency,
-    )
+    try:
+        body = build_payload(
+            origin_country_alpha2=ship_from.get("countryCode"),
+            destination_country_alpha2=ship_to.get("countryCode"),
+            items=items,
+            shipment_charge=shipment_charge,
+            insurance_fee=insurance_fee,
+            currency=currency,
+        )
+    except ValueError as error:
+        return {"success": False, "error": str(error), "api_version": _API_VERSION}
+
+    return calculate_taxes_and_duties(body)
