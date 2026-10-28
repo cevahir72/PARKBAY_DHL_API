@@ -1,5 +1,8 @@
 from datetime import datetime
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 
 def add_if(payload, key, value):
     if value is None:
@@ -26,6 +29,73 @@ DISTRIBUTION_CENTERS = {
     "77407-9012": "USIAH1",
     "75006-2527": "USDFW1",
 }
+
+
+def normalize_zip(postal_code):
+    """
+    Warehouse ZIP kodunu karşılaştırılabilir biçime getirir.
+
+    Kabul edilen biçimler:
+      "77407-9012", "774079012", "77407 9012", " 77407-9012 " -> "77407-9012"
+      "77407"                                                  -> "77407"
+    """
+    if postal_code is None:
+        return None
+
+    zip_code = str(postal_code).strip().upper().replace(" ", "")
+    if not zip_code:
+        return None
+
+    # 774079012 -> 77407-9012
+    if zip_code.isdigit() and len(zip_code) == 9:
+        return f"{zip_code[:5]}-{zip_code[5:]}"
+
+    # 77407_9012 gibi ayraç farklılıklarını normalize et
+    if len(zip_code) == 10 and zip_code[5] in "-_":
+        return f"{zip_code[:5]}-{zip_code[6:]}"
+
+    return zip_code
+
+
+def warehouse_value(mapping, postal_code):
+    """
+    ZIP / ZIP+4 farklarını tolere ederek pickup veya distribution center
+    değerini bulur.
+
+    Örnek:
+      "77407-9012" -> exact match
+      "77407"      -> 5 haneli ZIP, "77407-9012" kaydıyla eşleşir
+      "774079012"  -> "77407-9012" olarak normalize edilir
+
+    Eşleşme yoksa None döner; DHL'e eksik payload gönderilmemelidir.
+    """
+    zip_code = normalize_zip(postal_code)
+    if not zip_code:
+        return None
+
+    if zip_code in mapping:
+        return mapping[zip_code]
+
+    zip5 = zip_code.split("-", 1)[0]
+
+    # 5 haneli ZIP doğrudan anahtar olarak tanımlıysa onu kullan
+    if zip5 in mapping:
+        return mapping[zip5]
+
+    # ZIP+4 gönderilmiş, haritada 5 haneli kayıt var; veya tersi
+    for key, value in mapping.items():
+        if normalize_zip(key).split("-", 1)[0] == zip5:
+            return value
+
+    return None
+
+
+def missing_warehouse_fields(payload):
+    """DHL payload'ında zorunlu pickup / distributionCenter alanlarını kontrol eder."""
+    if not isinstance(payload, dict):
+        return ["pickup", "distributionCenter"]
+
+    return [key for key in ("pickup", "distributionCenter") if not payload.get(key)]
 
 
 def normalize_oz_weight(weight):
@@ -228,9 +298,6 @@ def request_helper(client_json, client_id, r_type):
     return payload
 
 def dhl_request_helper(client_json, client_id, r_type):
-    pickup_dict = PICKUP_DICT
-    # ODF 
-    distributionCenter = DISTRIBUTION_CENTERS
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}"
 
@@ -261,10 +328,10 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(ship_from, "phone", client_json.get("shipFrom", {}).get("phoneNumber") or client_json.get("shipFrom", {}).get("phone"))
     add_if(payload, "returnAddress", ship_from)
 
-    add_if(payload, "pickup", pickup_dict.get(ship_from.get("postalCode")))
+    add_if(payload, "pickup", warehouse_value(PICKUP_DICT, ship_from.get("postalCode")))
     add_if(payload, "orderedProductId", "GND")
     #Expedited için bu satırın değişmesi lazım
-    add_if(payload, "distributionCenter", distributionCenter.get(ship_from.get("postalCode")))
+    add_if(payload, "distributionCenter", warehouse_value(DISTRIBUTION_CENTERS, ship_from.get("postalCode")))
     add_if(payload, "shipperInstruction", client_json.get("shipperInstruction"))
 
     for package in client_json.get("packages", []):
@@ -330,8 +397,6 @@ def dhl_int_request_helper(client_json, client_id, r_type):
     - weight customsDetails içinde YOK
     - customs, channelDetails root'ta YOK
     """
-    pickup_dict = PICKUP_DICT
-    distributionCenter = DISTRIBUTION_CENTERS
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}-INT"
 
@@ -369,8 +434,8 @@ def dhl_int_request_helper(client_json, client_id, r_type):
 
     # Pickup ve distribution center
     from_zip = ship_from.get("postalCode")
-    pickup_id = pickup_dict.get(from_zip)
-    dist_center = distributionCenter.get(from_zip)
+    pickup_id = warehouse_value(PICKUP_DICT, from_zip)
+    dist_center = warehouse_value(DISTRIBUTION_CENTERS, from_zip)
     
     add_if(payload, "pickup", pickup_id)
     add_if(payload, "orderedProductId", "PLT")  # DHL Parcel International Direct
@@ -379,7 +444,11 @@ def dhl_int_request_helper(client_json, client_id, r_type):
     
     # Warehouse zip validation - PLT için geçerli warehouse zip zorunlu
     if not pickup_id or not dist_center:
-        app.logger.warning(f"PLT International: Invalid warehouse zip {from_zip}. Valid: {list(pickup_dict.keys())}")
+        logger.warning(
+            "PLT International: invalid warehouse zip %r. Valid: %s",
+            from_zip,
+            sorted(PICKUP_DICT.keys())
+        )
 
     # Paketler
     for package in client_json.get("packages", []):

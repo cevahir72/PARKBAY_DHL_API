@@ -3,8 +3,9 @@ from flask import request, jsonify, g
 from model import ShipmentLog, Label
 import time
 import requests
-from data_helper import dhl_request_helper, normalize_package_weights
+from data_helper import dhl_request_helper, normalize_package_weights, missing_warehouse_fields, PICKUP_DICT
 from dhl_service import get_dhl_token
+from db_helpers import release_db_connection
 from decimal import Decimal
 
 from datetime import datetime
@@ -26,6 +27,39 @@ def check_rate_limit(client):
 
     db.session.commit()
     return True
+
+
+# 🔹 WAREHOUSE (pickup / distributionCenter) VALIDATION
+def invalid_warehouse_response(data, payload):
+    """
+    ZIP eşleşmediği için pickup / distributionCenter eksikse DHL'e istek
+    göndermeden anlaşılır bir 400 döndürür.
+
+    DHL aksi halde "required key [pickup] not found" / "required key
+    [distributionCenter] not found" şeklinde anlaşılması zor bir hata verir.
+    """
+    missing = missing_warehouse_fields(payload)
+    if not missing:
+        return None
+
+    postal_code = (data.get("shipFrom") or {}).get("postalCode")
+    app.logger.error(
+        "DHL payload is missing %s. shipFrom.postalCode=%r valid_zips=%s",
+        ", ".join(missing),
+        postal_code,
+        sorted(PICKUP_DICT.keys())
+    )
+
+    return jsonify({"errors": [
+        {
+            "code": "InvalidWarehouse",
+            "details": (
+                f"shipFrom.postalCode '{postal_code}' is not a configured "
+                f"DHL warehouse. Valid ZIPs: {sorted(PICKUP_DICT.keys())}"
+            ),
+            "message": "Invalid warehouse zip code"
+        }
+    ]}), 400
 
 
 # 🔹 DHL REQUEST
@@ -86,6 +120,13 @@ def dhl_rate_label():
             }
         ]}), 429
 
+    # DHL çağrısı boyunca MySQL bağlantısını açık tutmamak için
+    # istemci bilgilerini al ve oturumu serbest bırak.
+    client_id = client.id
+    reference_code = client.reference_code
+    com_fee = client.com_fee
+    release_db_connection()
+
     data = request.json or {}
     normalize_package_weights(data)
 
@@ -99,7 +140,11 @@ def dhl_rate_label():
             }
         ]}), 400
 
-    dhl_payload = dhl_request_helper(data, client.reference_code, "rate")
+    dhl_payload = dhl_request_helper(data, reference_code, "rate")
+
+    error_response = invalid_warehouse_response(data, dhl_payload)
+    if error_response:
+        return error_response
 
     is_test_label = data.get("isTestLabel", False)
 
@@ -126,7 +171,7 @@ def dhl_rate_label():
                     total_charge = float(total_charge)
 
                     # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(client.com_fee)
+                    mapped_rate = total_charge + 0.10 + float(com_fee)
 
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
                     first_product["rate"]["amount"] = round(mapped_rate, 2)
@@ -144,7 +189,7 @@ def dhl_rate_label():
             response_value = str(response_data)
 
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_rate_label TEST" if is_test_label else "dhl_rate_label",
             reference_id=response_data.get("pickup"),
             status="success" if status_code == 200 else "failed",
@@ -177,6 +222,13 @@ def dhl_create_label():
             }
         ]}), 429
 
+    # DHL rate + label çağrıları boyunca MySQL bağlantısını açık
+    # tutmamak için istemci bilgilerini al ve oturumu serbest bırak.
+    client_id = client.id
+    reference_code = client.reference_code
+    com_fee = client.com_fee
+    release_db_connection()
+
     data = request.json or {}
     normalize_package_weights(data)
 
@@ -190,7 +242,12 @@ def dhl_create_label():
             }
         ]}), 400
 
-    rate_payload = dhl_request_helper(data, client.reference_code, "rate")
+    rate_payload = dhl_request_helper(data, reference_code, "rate")
+
+    error_response = invalid_warehouse_response(data, rate_payload)
+    if error_response:
+        return error_response
+
     is_test_label = data.get("isTestLabel", False)
 
     # DHL Rate endpoint çağrısı (shipping/v4/products)
@@ -214,7 +271,7 @@ def dhl_create_label():
                     total_charge = float(total_charge)
 
                     # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(client.com_fee)
+                    mapped_rate = total_charge + 0.10 + float(com_fee)
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
 
@@ -232,7 +289,7 @@ def dhl_create_label():
             response_value = str(rate_response_data)
 
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_rate_label TEST" if is_test_label else "dhl_rate_label",
                 reference_id=rate_response_data.get("pickup"),
                 status="success" if rate_status_code == 200 else "failed",
@@ -246,7 +303,11 @@ def dhl_create_label():
         db.session.rollback()
 
 
-    dhl_payload = dhl_request_helper(data, client.reference_code, "create")
+    dhl_payload = dhl_request_helper(data, reference_code, "create")
+
+    error_response = invalid_warehouse_response(data, dhl_payload)
+    if error_response:
+        return error_response
 
     # DHL create label endpoint çağrısı (shipping/v4/label?format=PNG)
     status_code, response_data = dhl_request(
@@ -270,7 +331,7 @@ def dhl_create_label():
         # DHL başarısız olduğunda yalnızca başarısız log tutulur.
         try:
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_create_label TEST"if is_test_label else "dhl_create_label",
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
@@ -286,7 +347,7 @@ def dhl_create_label():
             app.logger.exception(
                 "DHL label failure log could not be saved. "
                 "client_id=%s package_id=%s",
-                client.id,
+                client_id,
                 dhl_payload.get("packageDetail", {}).get("packageId")
             )
 
@@ -305,7 +366,7 @@ def dhl_create_label():
         app.logger.error(
             "DHL returned 200 but labels is empty. "
             "client_id=%s package_id=%s response=%s",
-            client.id,
+            client_id,
             dhl_payload.get("packageDetail", {}).get("packageId"),
             str(response_to_return)
         )
@@ -358,7 +419,7 @@ def dhl_create_label():
 
     try:
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_create_label TEST"if is_test_label else "dhl_create_label",
             reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
             status="success",
@@ -382,10 +443,10 @@ def dhl_create_label():
             from_address = ", ".join(str(f) for f in fields if f )
 
             label_record = Label(
-                client_id=client.id,
+                client_id=client_id,
                 pickup_id=dhl_payload.get("pickup"),
                 created_at=datetime.utcnow(),
-                reference_code=client.reference_code,
+                reference_code=reference_code,
                 status="purchased",
                 market_place=marketPlace,
                 from_address=from_address,
@@ -418,7 +479,7 @@ def dhl_create_label():
             "DHL label created but local database save failed. "
             "client_id=%s package_id=%s shipment_id=%s "
             "tracking_number=%s",
-            client.id,
+            client_id,
             dhl_payload.get("packageDetail", {}).get("packageId"),
             shipment_id,
             tracking_number
@@ -428,7 +489,7 @@ def dhl_create_label():
         # ayrı bir transaction ile tekrar kaydedilmeye çalışılır.
         try:
             recovery_log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_create_label_db_failed",
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
@@ -454,7 +515,7 @@ def dhl_create_label():
                 "DHL recovery log could not be saved. "
                 "client_id=%s package_id=%s shipment_id=%s "
                 "tracking_number=%s",
-                client.id,
+                client_id,
                 dhl_payload.get("packageDetail", {}).get("packageId"),
                 shipment_id,
                 tracking_number
@@ -499,6 +560,8 @@ def dhl_cancel_label():
             }
         ]}), 429
 
+    client_id = client.id
+
     data = request.json or {}
     #shipment_id = data.get("shipment_id")
     shipment_id = data.get("shipmentId")
@@ -514,9 +577,10 @@ def dhl_cancel_label():
     is_test_label = data.get("isTestLabel", False)
 
     label = None
+    label_id = None
 
     if not is_test_label:
-        label = Label.query.filter_by(shipment_id=shipment_id, client_id=client.id).first()
+        label = Label.query.filter_by(shipment_id=shipment_id, client_id=client_id).first()
 
         if not label:
             return jsonify({"success": False, "message": "Label not found"}), 404
@@ -524,8 +588,13 @@ def dhl_cancel_label():
         if label.status == "refunded":
             return jsonify({"success": False, "message": "Label was canceled before"}), 400
 
+        pickup_id = label.pickup_id
+        label_id = label.id
+    else:
+        pickup_id = shipment_id
 
-    pickup_id = label.pickup_id if label else shipment_id
+    # DHL DELETE çağrısı sırasında MySQL bağlantısını açık tutma.
+    release_db_connection()
 
     # DHL proxy isteği
     status_code, response_data = dhl_request(
@@ -544,10 +613,12 @@ def dhl_cancel_label():
             "dhl_response": response_data
         }), status_code
 
-    if label:
+    if label_id:
         try:
-            label.status = "refunded"
-            label.refunded_at = datetime.utcnow()
+            label = db.session.get(Label, label_id)
+            if label is not None:
+                label.status = "refunded"
+                label.refunded_at = datetime.utcnow()
 
             db.session.commit() # Commit tam olarak burada olmalı
         except Exception as e:
@@ -556,7 +627,7 @@ def dhl_cancel_label():
 
     try:
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_cancel_label TEST" if is_test_label else "dhl_cancel_label",
             reference_id=shipment_id,
             status="success" if status_code in (200, 204) else "failed",

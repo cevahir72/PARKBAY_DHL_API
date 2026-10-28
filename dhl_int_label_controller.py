@@ -3,7 +3,14 @@ from flask import request, jsonify, g
 from model import ShipmentLog, InternationalLabel
 import time
 import requests
-from data_helper import dhl_int_request_helper, normalize_package_weights
+from data_helper import (
+    dhl_int_request_helper,
+    normalize_package_weights,
+    warehouse_value,
+    PICKUP_DICT,
+    DISTRIBUTION_CENTERS,
+)
+from db_helpers import release_db_connection
 from dhl_service import get_dhl_token
 from easyship_service import calculate_for_dhl_request, public_error
 from decimal import Decimal
@@ -26,19 +33,6 @@ def check_rate_limit(client):
 
     db.session.commit()
     return True
-
-
-def release_db_connection():
-    """
-    Uzun süren DHL/Easyship HTTP çağrılarından önce MySQL bağlantısını
-    havuza bırakır. Aksi halde bağlantı istek boyunca boşta kalır; sunucu
-    tarafından kapatılırsa "Lost connection to MySQL server during query"
-    hatası (rollback sırasında) alınır.
-    """
-    try:
-        db.session.remove()
-    except Exception:
-        app.logger.exception("DB session could not be released")
 
 
 # 🔹 DHL REQUEST (mevcut dhl_request fonksiyonunu kullanabiliriz, endpoint değiştireceğiz)
@@ -152,13 +146,16 @@ def dhl_int_rate_label():
             "message": "Missing weight"
         }]}), 400
 
-    # 🔸 PLT International için warehouse zip validation (pickupDict keys)
-    valid_warehouse_zips = {"75081-1955", "75243-5485", "77407-9012", "75006-2527"}
-    from_zip = ship_from.get("postalCode", "").strip()
-    if from_zip not in valid_warehouse_zips:
+    # 🔸 PLT International için warehouse zip validation
+    # pickup / distributionCenter eşleşmesi ZIP ve ZIP+4 biçimlerini destekler.
+    from_zip = ship_from.get("postalCode")
+    if (
+        not warehouse_value(PICKUP_DICT, from_zip)
+        or not warehouse_value(DISTRIBUTION_CENTERS, from_zip)
+    ):
         return jsonify({"errors": [{
             "code": "InvalidWarehouse",
-            "details": f"shipFrom.postalCode must be a valid warehouse zip for PLT International. Valid: {list(valid_warehouse_zips)}",
+            "details": f"shipFrom.postalCode must be a valid warehouse zip for PLT International. Valid: {sorted(PICKUP_DICT.keys())}",
             "message": "Invalid warehouse zip code"
         }]}), 400
 
@@ -313,13 +310,16 @@ def dhl_int_create_label():
             "message": "Missing weight"
         }]}), 400
 
-    # 🔸 PLT International için warehouse zip validation (pickupDict keys)
-    valid_warehouse_zips = {"75081-1955", "75243-5485", "77407-9012", "75006-2527"}
-    from_zip = ship_from.get("postalCode", "").strip()
-    if from_zip not in valid_warehouse_zips:
+    # 🔸 PLT International için warehouse zip validation
+    # pickup / distributionCenter eşleşmesi ZIP ve ZIP+4 biçimlerini destekler.
+    from_zip = ship_from.get("postalCode")
+    if (
+        not warehouse_value(PICKUP_DICT, from_zip)
+        or not warehouse_value(DISTRIBUTION_CENTERS, from_zip)
+    ):
         return jsonify({"errors": [{
             "code": "InvalidWarehouse",
-            "details": f"shipFrom.postalCode must be a valid warehouse zip for PLT International. Valid: {list(valid_warehouse_zips)}",
+            "details": f"shipFrom.postalCode must be a valid warehouse zip for PLT International. Valid: {sorted(PICKUP_DICT.keys())}",
             "message": "Invalid warehouse zip code"
         }]}), 400
 
@@ -749,6 +749,8 @@ def dhl_int_cancel_label():
             }
         ]}), 429
 
+    client_id = client.id
+
     data = request.json or {}
     shipment_id = data.get("shipmentId")
 
@@ -764,13 +766,14 @@ def dhl_int_cancel_label():
     is_test_label = data.get("isTestLabel", False)
 
     label = None
+    label_id = None
     dhl_package_id = data.get("dhlPackageId")
     pickup_id = data.get("pickupId")
 
     if not is_test_label:
         label = InternationalLabel.query.filter_by(
             shipment_id=shipment_id,
-            client_id=client.id
+            client_id=client_id
         ).first()
 
         if label:
@@ -780,6 +783,7 @@ def dhl_int_cancel_label():
             # DB'de kayıtlı gerçek DHL kimliklerini kullan
             pickup_id = pickup_id or label.pickup_id
             dhl_package_id = dhl_package_id or label.tracking_number
+            label_id = label.id
         elif not (pickup_id and dhl_package_id):
             # Kayıt yoksa iptal için gerekli DHL kimlikleri istekte verilmelidir
             return jsonify({"success": False, "message": "Label not found"}), 404
@@ -793,6 +797,10 @@ def dhl_int_cancel_label():
             ),
             "retryable": False
         }), 400
+
+    # DHL DELETE çağrıları sırasında MySQL bağlantısını açık tutma.
+    # Label bilgileri yukarıda yerel değişkenlere alındı.
+    release_db_connection()
 
     # DHL: DELETE /shipping/v4/label/{pickup}?packageId=... | ?dhlPackageId=...
     # International (PLT) etiketleri packageId ile bulunamayabilir (400.0000002).
@@ -861,17 +869,19 @@ def dhl_int_cancel_label():
     )
 
     if void_not_supported:
-        if label:
+        if label_id:
             try:
-                label.status = "cancelled"
-                label.refunded_at = datetime.utcnow()
+                label = db.session.get(InternationalLabel, label_id)
+                if label is not None:
+                    label.status = "cancelled"
+                    label.refunded_at = datetime.utcnow()
                 db.session.commit()
             except Exception as e:
                 db.session.rollback()
                 app.logger.exception(
                     "DHL Int label local cancel could not be saved. "
                     "client_id=%s shipment_id=%s dhl_package_id=%s",
-                    client.id,
+                    client_id,
                     shipment_id,
                     dhl_package_id
                 )
@@ -882,7 +892,7 @@ def dhl_int_cancel_label():
 
         try:
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
                 reference_id=shipment_id,
                 status="cancelled_local",
@@ -911,7 +921,7 @@ def dhl_int_cancel_label():
     if status_code not in (200, 204):
         try:
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
                 reference_id=shipment_id,
                 status="failed",
@@ -929,17 +939,19 @@ def dhl_int_cancel_label():
             "attempts": attempts
         }), status_code
 
-    if label:
+    if label_id:
         try:
-            label.status = "refunded"
-            label.refunded_at = datetime.utcnow()
+            label = db.session.get(InternationalLabel, label_id)
+            if label is not None:
+                label.status = "refunded"
+                label.refunded_at = datetime.utcnow()
             db.session.commit()
         except Exception as e:
             db.session.rollback()
             app.logger.exception(
                 "DHL Int label voided but local DB could not be updated. "
                 "client_id=%s shipment_id=%s dhl_package_id=%s",
-                client.id,
+                client_id,
                 shipment_id,
                 dhl_package_id
             )
@@ -947,7 +959,7 @@ def dhl_int_cancel_label():
 
     try:
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
             reference_id=shipment_id,
             status="success",
