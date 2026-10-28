@@ -56,6 +56,8 @@ def client_token_required(f):
 
         # 👉 global context (çok önemli)
         g.client = client
+        # db.session.remove() sonrası g.client detached kalır; id'yi ayrıca sakla
+        g.client_id = client.id
 
         return f(*args, **kwargs)
 
@@ -80,8 +82,7 @@ def log_request(response):
             return response  # diğerlerini loglama
 
         # sadece client varsa logla (auth geçmişse)
-        client_id = getattr(g, "client", None)
-        client_id = client_id.id if client_id else None
+        client_id = getattr(g, "client_id", None)
 
         log = RequestLog(
             client_id=client_id,

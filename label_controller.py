@@ -6,6 +6,7 @@ import time
 import requests
 from amazon_service import get_amazon_token
 from data_helper import request_helper
+from db_helpers import release_db_connection
 from decimal import Decimal
 from calculator import calculate_shipping_cost
 from datetime import datetime, timedelta
@@ -114,9 +115,13 @@ def rate_label():
             }
         ]}), 400
 
-    amazon_payload = request_helper(data, client.reference_code, "rate")
+    client_id = client.id
+    reference_code = client.reference_code
+    com_fee = client.com_fee
 
-    mapped_rate, mapped_message = calculate_shipping_cost(client.id, data["shipFrom"]["postalCode"], data["shipTo"]["postalCode"], data["packages"][0]["weight"]["value"])
+    amazon_payload = request_helper(data, reference_code, "rate")
+
+    mapped_rate, mapped_message = calculate_shipping_cost(client_id, data["shipFrom"]["postalCode"], data["shipTo"]["postalCode"], data["packages"][0]["weight"]["value"])
     if not mapped_rate:
         return jsonify({"errors": [
             {
@@ -127,6 +132,10 @@ def rate_label():
         ]}), 400
 
     is_test_label = data.get("isTestLabel", False)
+
+    # Amazon çağrısı sırasında MySQL bağlantısını açık tutma
+    release_db_connection()
+
     status_code, response_data = amazon_request(
         "shipping/v2/shipments/rates",
         amazon_payload,
@@ -147,7 +156,7 @@ def rate_label():
                     mapped_rate = float(mapped_rate)
                     if total_charge > mapped_rate:
                         mapped_rate = total_charge + 0.50
-                    mapped_rate += float(client.com_fee)
+                    mapped_rate += float(com_fee)
 
                     #first_rate["totalCharge"]["value"] = round(total_charge, 2)
                     first_rate["totalCharge"]["value"] = round(mapped_rate, 2)
@@ -165,7 +174,7 @@ def rate_label():
             response_value = str(response_data)
 
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="rate_label TEST" if is_test_label else "rate_label",
             reference_id=response_data.get("payload", {}).get("requestToken"),
             status="success" if status_code == 200 else "failed",
@@ -209,9 +218,13 @@ def create_label():
             }
         ]}), 400
 
-    amazon_payload = request_helper(data, client.reference_code, "create")
+    client_id = client.id
+    reference_code = client.reference_code
+    com_fee = client.com_fee
 
-    mapped_rate, mapped_message = calculate_shipping_cost(client.id, data["shipFrom"]["postalCode"], data["shipTo"]["postalCode"], data["packages"][0]["weight"]["value"])
+    amazon_payload = request_helper(data, reference_code, "create")
+
+    mapped_rate, mapped_message = calculate_shipping_cost(client_id, data["shipFrom"]["postalCode"], data["shipTo"]["postalCode"], data["packages"][0]["weight"]["value"])
     if not mapped_rate:
         return jsonify({"errors": [
             {
@@ -222,6 +235,10 @@ def create_label():
         ]}), 400
 
     is_test_label = data.get("isTestLabel", False)
+
+    # Amazon çağrısı sırasında MySQL bağlantısını açık tutma
+    release_db_connection()
+
     status_code, response_data = amazon_request(
         "shipping/v2/oneClickShipment",
         amazon_payload,
@@ -244,7 +261,7 @@ def create_label():
                     mapped_rate = float(mapped_rate)
                     if total_charge > mapped_rate:
                         mapped_rate = total_charge + 0.50
-                    mapped_rate += float(client.com_fee)
+                    mapped_rate += float(com_fee)
 
                     payload["totalCharge"]["value"] = round(mapped_rate, 2)
 
@@ -268,7 +285,7 @@ def create_label():
             response_value = str(response_data)
 
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="create_label TEST" if is_test_label else "create_label",
             reference_id=response_data.get("payload", {}).get("shipmentId"),
             status="success" if status_code == 200 else "failed",
@@ -294,9 +311,9 @@ def create_label():
             from_address = ", ".join(str(f) for f in fields if f)
 
             label = Label(
-                client_id = client.id,
+                client_id = client_id,
                 created_at = datetime.utcnow(),
-                reference_code = client.reference_code,
+                reference_code = reference_code,
                 status = "purchased",
                 market_place = marketPlace,
                 from_address = from_address,
