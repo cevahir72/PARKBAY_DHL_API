@@ -276,6 +276,7 @@ class InternationalLabel(db.Model):
 
     # 🔸 GÜMRÜK / CUSTOMS ALANLARI (International için zorunlu)
     customs_value = db.Column(db.Numeric(10,2))          # Toplam gümrük değeri
+    total_cost = db.Column(db.Numeric(10,2))             # customs_value + my_cost
     customs_currency = db.Column(db.String(3), default="USD")
     hs_code = db.Column(db.String(20))                   # Harmonized System Code
     origin_country = db.Column(db.String(3))             # Ülke menşei (ISO code)
