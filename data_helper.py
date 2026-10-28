@@ -297,7 +297,7 @@ def request_helper(client_json, client_id, r_type):
     add_if(payload, "destinationAccessPointDetails", client_json.get("destinationAccessPointDetails"))
     return payload
 
-def dhl_request_helper(client_json, client_id, r_type):
+def dhl_request_helper(client_json, client_id, r_type, ordered_product_id="GND"):
     timestamp = int(time.time() * 1000)
     package_id = f"{client_id}-{timestamp}"
 
@@ -329,8 +329,7 @@ def dhl_request_helper(client_json, client_id, r_type):
     add_if(payload, "returnAddress", ship_from)
 
     add_if(payload, "pickup", warehouse_value(PICKUP_DICT, ship_from.get("postalCode")))
-    add_if(payload, "orderedProductId", "GND")
-    #Expedited için bu satırın değişmesi lazım
+    add_if(payload, "orderedProductId", ordered_product_id)
     add_if(payload, "distributionCenter", warehouse_value(DISTRIBUTION_CENTERS, ship_from.get("postalCode")))
     add_if(payload, "shipperInstruction", client_json.get("shipperInstruction"))
 
