@@ -5,7 +5,7 @@ import time
 import requests
 from data_helper import dhl_int_request_helper, normalize_package_weights
 from dhl_service import get_dhl_token
-from easyship_service import calculate_for_dhl_request
+from easyship_service import calculate_for_dhl_request, public_error
 from decimal import Decimal
 from datetime import datetime
 
@@ -26,6 +26,19 @@ def check_rate_limit(client):
 
     db.session.commit()
     return True
+
+
+def release_db_connection():
+    """
+    Uzun süren DHL/Easyship HTTP çağrılarından önce MySQL bağlantısını
+    havuza bırakır. Aksi halde bağlantı istek boyunca boşta kalır; sunucu
+    tarafından kapatılırsa "Lost connection to MySQL server during query"
+    hatası (rollback sırasında) alınır.
+    """
+    try:
+        db.session.remove()
+    except Exception:
+        app.logger.exception("DB session could not be released")
 
 
 # 🔹 DHL REQUEST (mevcut dhl_request fonksiyonunu kullanabiliriz, endpoint değiştireceğiz)
@@ -93,6 +106,12 @@ def dhl_int_rate_label():
             }
         ]}), 429
 
+    # DHL çağrısı boyunca MySQL bağlantısını açık tutmamak için
+    # istemci bilgilerini al ve oturumu serbest bırak.
+    client_id = client.id
+    reference_code = client.reference_code
+    release_db_connection()
+
     data = request.json or {}
     normalize_package_weights(data)
 
@@ -144,7 +163,7 @@ def dhl_int_rate_label():
         }]}), 400
 
     # DHL International rate payload hazırla
-    dhl_payload = dhl_int_request_helper(data, client.reference_code, "rate")
+    dhl_payload = dhl_int_request_helper(data, reference_code, "rate")
 
     is_test_label = data.get("isTestLabel", False)
 
@@ -210,7 +229,7 @@ def dhl_int_rate_label():
             response_value = str(response_data)
 
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_int_rate_label TEST" if is_test_label else "dhl_int_rate_label",
             reference_id=response_data.get("pickup") or response_data.get("quoteId"),
             status="success" if status_code == 200 else "failed",
@@ -248,6 +267,12 @@ def dhl_int_create_label():
                 "message": "Rate Limit"
             }
         ]}), 429
+
+    # DHL/Easyship çağrıları uzun sürebilir; bu sırada MySQL bağlantısını
+    # açık tutmamak için istemci bilgilerini al ve oturumu serbest bırak.
+    client_id = client.id
+    reference_code = client.reference_code
+    release_db_connection()
 
     data = request.json or {}
     normalize_package_weights(data)
@@ -315,7 +340,7 @@ def dhl_int_create_label():
     is_test_label = data.get("isTestLabel", False)
 
     # 🔸 ADIM 1: Rate al
-    rate_payload = dhl_int_request_helper(data, client.reference_code, "rate")
+    rate_payload = dhl_int_request_helper(data, reference_code, "rate")
 
     rate_status_code, rate_response_data = dhl_int_request(
         endpoint="shipping/v4/products",  # International rates endpoint
@@ -354,7 +379,7 @@ def dhl_int_create_label():
             response_value = str(rate_response_data)
 
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_int_rate_label TEST" if is_test_label else "dhl_int_rate_label",
                 reference_id=rate_response_data.get("pickup") or rate_response_data.get("quoteId"),
                 status="success" if rate_status_code == 200 else "failed",
@@ -403,7 +428,7 @@ def dhl_int_create_label():
     except Exception as error:
         app.logger.exception(
             "Easyship taxes & duties call failed unexpectedly. client_id=%s",
-            client.id,
+            client_id,
         )
         easyship_result = {"success": False, "error": str(error)}
 
@@ -411,18 +436,24 @@ def dhl_int_create_label():
         app.logger.warning(
             "Easyship taxes & duties could not be calculated. "
             "client_id=%s error=%s",
-            client.id,
+            client_id,
             easyship_result.get("error"),
         )
 
-        return jsonify({"errors": [{
+        error_payload = {
             "code": "CustomsTaxCalculationFailed",
-            "details": (
-                "Customs duty and tax could not be calculated for this "
-                "shipment. Please try again later."
+            "details": public_error(
+                easyship_result.get("error")
+                or "Customs duty and tax could not be calculated for "
+                "this shipment."
             ),
-            "message": "Customs tax calculation failed"
-        }]}), 502
+            "message": "Customs tax calculation failed",
+        }
+
+        if easyship_result.get("problems"):
+            error_payload["problems"] = easyship_result["problems"]
+
+        return jsonify({"errors": [error_payload]}), 502
 
     customs_value = easyship_result["total"]
     customs_currency = str(
@@ -436,7 +467,7 @@ def dhl_int_create_label():
     total_cost = round(my_cost_value + float(customs_value), 2)
 
     # 🔸 ADIM 2: Label oluştur
-    dhl_payload = dhl_int_request_helper(data, client.reference_code, "create")
+    dhl_payload = dhl_int_request_helper(data, reference_code, "create")
 
     # DHL create label endpoint - International için de aynı olabilir
     status_code, response_data = dhl_int_request(
@@ -460,7 +491,7 @@ def dhl_int_create_label():
 
         try:
             log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_int_create_label TEST" if is_test_label else "dhl_int_create_label",
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
@@ -475,7 +506,7 @@ def dhl_int_create_label():
             app.logger.exception(
                 "DHL Int label failure log could not be saved. "
                 "client_id=%s package_id=%s",
-                client.id,
+                client_id,
                 dhl_payload.get("packageDetail", {}).get("packageId")
             )
 
@@ -491,7 +522,7 @@ def dhl_int_create_label():
         app.logger.error(
             "DHL Int returned 200 but labels is empty. "
             "client_id=%s package_id=%s response=%s",
-            client.id,
+            client_id,
             dhl_payload.get("packageDetail", {}).get("packageId"),
             str(response_to_return)
         )
@@ -565,7 +596,7 @@ def dhl_int_create_label():
 
     try:
         log = ShipmentLog(
-            client_id=client.id,
+            client_id=client_id,
             action="dhl_int_create_label TEST" if is_test_label else "dhl_int_create_label",
             reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
             status="success",
@@ -600,10 +631,10 @@ def dhl_int_create_label():
             to_address = ", ".join(str(f) for f in to_fields if f)
 
             int_label_record = InternationalLabel(
-                client_id=client.id,
+                client_id=client_id,
                 pickup_id=dhl_pickup_id,
                 created_at=datetime.utcnow(),
-                reference_code=client.reference_code,
+                reference_code=reference_code,
                 status="purchased",
                 market_place=marketPlace,
                 from_address=from_address,
@@ -642,7 +673,7 @@ def dhl_int_create_label():
             "DHL Int label created but local database save failed. "
             "client_id=%s package_id=%s shipment_id=%s "
             "tracking_number=%s",
-            client.id,
+            client_id,
             dhl_payload.get("packageDetail", {}).get("packageId"),
             shipment_id,
             tracking_number
@@ -651,7 +682,7 @@ def dhl_int_create_label():
         # Recovery log
         try:
             recovery_log = ShipmentLog(
-                client_id=client.id,
+                client_id=client_id,
                 action="dhl_int_create_label_db_failed",
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
@@ -676,7 +707,7 @@ def dhl_int_create_label():
                 "DHL Int recovery log could not be saved. "
                 "client_id=%s package_id=%s shipment_id=%s "
                 "tracking_number=%s",
-                client.id,
+                client_id,
                 dhl_payload.get("packageDetail", {}).get("packageId"),
                 shipment_id,
                 tracking_number

@@ -525,6 +525,21 @@
         <h3>İstek Gövdesi</h3>
         <p>Rate sorgusuyla aynı gövde kullanılır. Opsiyonel olarak <code>insuranceFee</code> gönderilebilir (verilmezse <code>0</code>).</p>
 
+        <h3>Validasyon</h3>
+        <p>Gümrük hesabı için gereken veriler gönderilmeden önce alan alan doğrulanır. Eksik veya hatalı alan varsa etiket oluşturulmaz; hangi alanın nasıl düzeltileceği hata yanıtında belirtilir.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Alan</th><th>Kural</th></tr></thead>
+          <tbody>
+            <tr><td>shipFrom.countryCode</td><td>2 harfli ISO ülke kodu (örn: US)</td></tr>
+            <tr><td>shipTo.countryCode</td><td>2 harfli ISO ülke kodu (örn: DE)</td></tr>
+            <tr><td>packages[].items[].hsCode</td><td>6, 8 veya 10 haneli sayı; gümrük hesabında 8 haneye normalize edilir (örn: 85183000)</td></tr>
+            <tr><td>packages[].items[].originCountry</td><td>2 harfli ISO ülke kodu (örn: US, CN)</td></tr>
+            <tr><td>packages[].items[].itemValue.value</td><td>0'dan büyük sayı</td></tr>
+            <tr><td>packages[].items[].itemValue.unit</td><td>3 harfli para birimi (örn: USD). Tüm kalemler aynı para birimini kullanmalıdır.</td></tr>
+            <tr><td>packages[].items[].quantity</td><td>0'dan büyük sayı</td></tr>
+          </tbody>
+        </table></div>
+
         <div class="note"><strong>Gizli veriler:</strong> <code>amz_cost</code>, <code>my_cost</code>, <code>customs_value</code>, tax ve duty bilgileri müşteriye açılmaz; yalnızca veritabanında saklanır.</div>
 
         <h3>Maliyet Hesabı</h3>
@@ -533,12 +548,17 @@
         <div class="note"><strong>Yanıt:</strong> International yanıtında domestic yanıtındaki <code>totalCharge</code> alanının yerini <code>total_cost</code> alır. Etiket base64 (<code>labels[].labelData</code>), takip numarası (<code>labels[].trackingId</code>, <code>labels[].dhlPackageId</code>) ve domestic yanıtındaki diğer alanlar aynı şekilde döner.</div>
 
         <h3>Gümrük Vergisi Hatası — HTTP 502</h3>
-        <p>Gümrük vergisi ve tax hesaplanamazsa etiket <strong>oluşturulmaz</strong> (DHL'den ücret alınmaz).</p>
+        <p>Gümrük vergisi ve tax hesaplanamazsa etiket <strong>oluşturulmaz</strong> (DHL'den ücret alınmaz). <code>details</code> alanı hatanın nedenini, <code>problems</code> alanı ise düzeltilmesi gereken istek alanlarını tek tek gösterir.</p>
         <div class="code-block"><div class="code-label">Gümrük vergisi hata örneği</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
   "errors": [{
     "code": "CustomsTaxCalculationFailed",
-    "details": "Customs duty and tax could not be calculated for this shipment. Please try again later.",
-    "message": "Customs tax calculation failed"
+    "details": "invalid shipment data: shipFrom.countryCode must be a 2-letter ISO country code (e.g. US); packages[0].items[0].hsCode must contain 6, 8 or 10 digits; packages[0].items[0].itemValue.value must be a number greater than 0",
+    "message": "Customs tax calculation failed",
+    "problems": [
+      "shipFrom.countryCode must be a 2-letter ISO country code (e.g. US)",
+      "packages[0].items[0].hsCode must contain 6, 8 or 10 digits",
+      "packages[0].items[0].itemValue.value must be a number greater than 0"
+    ]
   }]
 }</code></pre></div>
 
