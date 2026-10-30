@@ -35,6 +35,67 @@ def check_rate_limit(client):
     return True
 
 
+# 🔹 ULUSLARARASI ETİKET FİYAT FARKI
+# Sabit 2$ her etikete eklenir. Ayrıca ağırlık farkı: ilk 1 lb (1 lb dahil)
+# 0.60 $, 1 lb'den sonra başlayan her lb için +0.60 $.
+# Örnek: 5$ DHL + 2$ sabit + 1 lb için 0.60 $ = 7.60 $
+#         5$ DHL + 2$ sabit + 2.3 lb için 1.20 $ = 8.20 $
+INT_FIXED_MARKUP = 2.0
+INT_MARKUP_PER_LB = 0.60
+_OZ_PER_LB = 16.0
+_LB_PER_KG = 2.2046226218
+
+
+def weight_in_lb(weight):
+    """Paket ağırlığını (dict) lb cinsinden döndürür."""
+    if not isinstance(weight, dict):
+        return 0.0
+
+    try:
+        value = float(weight.get("value"))
+    except (TypeError, ValueError):
+        return 0.0
+
+    unit = str(weight.get("unit") or "LB").strip().upper()
+
+    if unit in ("OZ", "OUNCE", "OUNCES"):
+        return value / _OZ_PER_LB
+    if unit in ("KG", "KGS", "KILOGRAM", "KILOGRAMS"):
+        return value * _LB_PER_KG
+
+    return value
+
+
+def calculate_int_markup(weight_lb):
+    """
+    Ağırlığa göre uluslararası etiket fiyat farkını hesaplar.
+
+    Sabit 2$ + ağırlık farkı. Ağırlık farkı: ilk 1 lb 0.60 $;
+    sonrasında her tam lb için 0.60 $ eklenir.
+    2.3 lb -> 2.00 + 1.20 = 3.20 $, 3.4 lb -> 2.00 + 1.80 = 3.80 $
+    """
+    try:
+        pounds = float(weight_lb)
+    except (TypeError, ValueError):
+        pounds = 0.0
+
+    weight_markup = 0.0
+    if pounds > 0:
+        # 2.3 lb -> 2, 3.4 lb -> 3; minimum 1 lb
+        billable_lb = max(1, int(pounds))
+        weight_markup = billable_lb * INT_MARKUP_PER_LB
+
+    return round(INT_FIXED_MARKUP + weight_markup, 2)
+
+
+def int_markup_for_packages(packages):
+    """İstekteki paket ağırlığına göre farkı (2$ sabit dahil) döndürür."""
+    if not packages:
+        return INT_FIXED_MARKUP
+
+    return calculate_int_markup(weight_in_lb(packages[0].get("weight")))
+
+
 # 🔹 DHL REQUEST (mevcut dhl_request fonksiyonunu kullanabiliriz, endpoint değiştireceğiz)
 def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params=None):
     """
@@ -86,7 +147,8 @@ def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params
 def dhl_int_rate_label():
     """
     DHL International Direct - Rate alma endpoint'i.
-    Gelen DHL fiyatına 2$ ekleyip döner (DB ile kıyaslama YOK).
+    Gelen DHL fiyatına 2$ sabit + ağırlığa göre fiyat farkı ekleyip döner
+    (DB ile kıyaslama YOK). Ağırlık farkı: ilk 1 lb 0.60 $, sonraki her lb +0.60 $.
     """
     client = g.client
 
@@ -194,8 +256,9 @@ def dhl_int_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # 🎯 DB KIYASLAMASI YOK - Sadece 2$ ekle
-                    final_rate = round(total_charge + 2.0, 2)
+                    # 🎯 DB KIYASLAMASI YOK - 2$ sabit + ağırlık farkı ekle
+                    markup = int_markup_for_packages(packages)
+                    final_rate = round(total_charge + markup, 2)
 
                     # Orijinal tutar log için sakla (response'a EKLEME)
                     original_amount = round(total_charge, 2)
@@ -250,7 +313,7 @@ def dhl_int_create_label():
     """
     DHL International Direct - Label oluşturma endpoint'i.
     1. Önce rate alır (shipping/v4/rates)
-    2. Fiyata 2$ ekler
+    2. 2$ sabit + ağırlık farkı ekler (ilk 1 lb 0.60 $, sonraki her lb +0.60 $)
     3. Sonra label oluşturur (shipping/v4/label)
     """
     client = g.client
@@ -367,8 +430,9 @@ def dhl_int_create_label():
                     total_charge = float(total_charge)
                     dhl_original_rate = round(total_charge, 2)
 
-                    # 🎯 2$ EKLE - DB kıyaslaması YOK
-                    final_rate = round(total_charge + 2.0, 2)
+                    # 🎯 2$ SABİT + AĞIRLIK FARKI - DB kıyaslaması YOK
+                    markup = int_markup_for_packages(packages)
+                    final_rate = round(total_charge + markup, 2)
 
                     if "rate" in first_item:
                         first_item.get("rate").pop("rateComponents", None)
