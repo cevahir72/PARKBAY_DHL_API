@@ -505,21 +505,21 @@
   "orderedProductId": "PLT",
   "productName": "DHL Parcel International Direct",
   "rate": {
-    "amount": 18.50,
+    "amount": 21.42,
     "currency": "USD",
     "effectiveFrom": "2026-10-16",
     "priceZone": "INTL-EU-DE"
   },
   "trackingAvailable": "FULL",
-  "originalAmount": 16.82
+  "total_cost": 28.34
 }</code></pre></div>
 
-        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code> zaten <strong>2$ işlem ücreti eklenmiş</strong> haldedir. <code>originalAmount</code> DHL ham fiyatıdır.</div>
+        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code>, DHL ham gönderi ücretine <strong>4$ sabit ücret</strong> ve ağırlığa göre her libre için <strong>0.60$</strong> eklenmiş halidir. <code>total_cost</code>, bu gönderi ücretine gümrük duty + tax toplamı eklenerek hesaplanır. Easyship bilgileri müşteriye gösterilmez.</div>
       </section>
 
       <section class="section" id="int-label-create">
         <h2>4.2 Label Oluşturma (International)</h2>
-        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce DHL rate alınır, 2$ eklenir. Ardından gümrük vergisi (duty) ve tax hesaplanır; etiket bu hesaplama başarılı olduktan sonra üretilir.</p>
+        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce DHL rate alınır, 4$ sabit ücret ve ağırlığa göre her libre için 0.60$ eklenir. Ardından gümrük vergisi (duty) ve tax hesaplanır; etiket bu hesaplama başarılı olduktan sonra üretilir.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/create</code></div>
         
         <h3>İstek Gövdesi</h3>
@@ -543,7 +543,7 @@
         <div class="note"><strong>Gizli veriler:</strong> <code>amz_cost</code>, <code>my_cost</code>, <code>customs_value</code>, tax ve duty bilgileri müşteriye açılmaz; yalnızca veritabanında saklanır.</div>
 
         <h3>Maliyet Hesabı</h3>
-        <p><code>amz_cost</code> = DHL ham fiyatı. <code>my_cost</code> = <code>amz_cost</code> + 2$. <code>customs_value</code> = <code>duty</code> + <code>tax</code>. <code>total_cost</code> = <code>my_cost</code> + <code>customs_value</code>.</p>
+        <p><code>amz_cost</code> = DHL ham fiyatı. <code>my_cost</code> = <code>amz_cost</code> + 4$ sabit ücret + ağırlığa göre her libre için 0.60$. <code>customs_value</code> = <code>duty</code> + <code>tax</code>. <code>total_cost</code> = <code>my_cost</code> + <code>customs_value</code>.</p>
 
         <div class="note"><strong>Yanıt:</strong> International yanıtında domestic yanıtındaki <code>totalCharge</code> alanının yerini <code>total_cost</code> alır. Etiket base64 (<code>labels[].labelData</code>), takip numarası (<code>labels[].trackingId</code>, <code>labels[].dhlPackageId</code>) ve domestic yanıtındaki diğer alanlar aynı şekilde döner.</div>
 
