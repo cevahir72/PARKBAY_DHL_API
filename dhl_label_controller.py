@@ -170,8 +170,8 @@ def dhl_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(com_fee)
+                    # API'den gelen fiyata client com_fee (komisyon) ekle
+                    mapped_rate = total_charge + float(com_fee or 0)
 
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
                     first_product["rate"]["amount"] = round(mapped_rate, 2)
@@ -272,8 +272,8 @@ def dhl_create_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(com_fee)
+                    # API'den gelen fiyata client com_fee (komisyon) ekle
+                    mapped_rate = total_charge + float(com_fee or 0)
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
 
