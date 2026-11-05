@@ -170,8 +170,8 @@ def dhl_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(com_fee)
+                    # API'den gelen fiyata client com_fee (komisyon) ekle
+                    mapped_rate = total_charge + float(com_fee or 0)
 
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
                     first_product["rate"]["amount"] = round(mapped_rate, 2)
@@ -242,7 +242,9 @@ def dhl_create_label():
             }
         ]}), 400
 
-    rate_payload = dhl_request_helper(data, reference_code, "rate")
+    rate_payload = dhl_request_helper(
+        data, reference_code, "rate", ordered_product_id="EXP"
+    )
 
     error_response = invalid_warehouse_response(data, rate_payload)
     if error_response:
@@ -270,8 +272,8 @@ def dhl_create_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata 0.10 ekle ve com_fee ekle
-                    mapped_rate = total_charge + 0.10 + float(com_fee)
+                    # API'den gelen fiyata client com_fee (komisyon) ekle
+                    mapped_rate = total_charge + float(com_fee or 0)
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
 
@@ -303,7 +305,9 @@ def dhl_create_label():
         db.session.rollback()
 
 
-    dhl_payload = dhl_request_helper(data, reference_code, "create")
+    dhl_payload = dhl_request_helper(
+        data, reference_code, "create", ordered_product_id="EXP"
+    )
 
     error_response = invalid_warehouse_response(data, dhl_payload)
     if error_response:
@@ -388,6 +392,7 @@ def dhl_create_label():
 
     # DB işlemlerinde ve hata durumunda kullanmak için
     # DHL bilgileri response değiştirilmeden önce alınıyor.
+    response_to_return["orderedProductId"] = "EXP"
     shipment_id = label.get("packageId")
     tracking_number = label.get("dhlPackageId")
 
@@ -457,7 +462,7 @@ def dhl_create_label():
                 customer_phone=data.get("shipTo", {}).get("phoneNumber"),
                 shipment_id=shipment_id,
                 carrier="DHL",
-                service=response_to_return.get("orderedProductId","DHL_Standard"),
+                service="EXP",
                 tracking_number=tracking_number,
                 amz_cost=Decimal(str(dhl_orijinal_rate)),
                 my_cost=Decimal(str(round(mapped_rate, 2)))

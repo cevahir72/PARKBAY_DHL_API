@@ -35,6 +35,67 @@ def check_rate_limit(client):
     return True
 
 
+# 🔹 ULUSLARARASI ETİKET FİYAT FARKI
+# Sabit 4$ her etikete eklenir. Ayrıca ağırlık farkı: ilk 1 lb (1 lb dahil)
+# 0.60 $, 1 lb'den sonra başlayan her lb için +0.60 $.
+# Örnek: 5$ DHL + 4$ sabit + 1 lb için 0.60 $ = 9.60 $
+#         5$ DHL + 4$ sabit + 2.3 lb için 1.20 $ = 10.20 $
+INT_FIXED_MARKUP = 4.0
+INT_MARKUP_PER_LB = 0.60
+_OZ_PER_LB = 16.0
+_LB_PER_KG = 2.2046226218
+
+
+def weight_in_lb(weight):
+    """Paket ağırlığını (dict) lb cinsinden döndürür."""
+    if not isinstance(weight, dict):
+        return 0.0
+
+    try:
+        value = float(weight.get("value"))
+    except (TypeError, ValueError):
+        return 0.0
+
+    unit = str(weight.get("unit") or "LB").strip().upper()
+
+    if unit in ("OZ", "OUNCE", "OUNCES"):
+        return value / _OZ_PER_LB
+    if unit in ("KG", "KGS", "KILOGRAM", "KILOGRAMS"):
+        return value * _LB_PER_KG
+
+    return value
+
+
+def calculate_int_markup(weight_lb):
+    """
+    Ağırlığa göre uluslararası etiket fiyat farkını hesaplar.
+
+    Sabit 4$ + ağırlık farkı. Ağırlık farkı: ilk 1 lb 0.60 $;
+    sonrasında her tam lb için 0.60 $ eklenir.
+    2.3 lb -> 4.00 + 1.20 = 5.20 $, 3.4 lb -> 4.00 + 1.80 = 5.80 $
+    """
+    try:
+        pounds = float(weight_lb)
+    except (TypeError, ValueError):
+        pounds = 0.0
+
+    weight_markup = 0.0
+    if pounds > 0:
+        # 2.3 lb -> 2, 3.4 lb -> 3; minimum 1 lb
+        billable_lb = max(1, int(pounds))
+        weight_markup = billable_lb * INT_MARKUP_PER_LB
+
+    return round(INT_FIXED_MARKUP + weight_markup, 2)
+
+
+def int_markup_for_packages(packages):
+    """İstekteki paket ağırlığına göre farkı (2$ sabit dahil) döndürür."""
+    if not packages:
+        return INT_FIXED_MARKUP
+
+    return calculate_int_markup(weight_in_lb(packages[0].get("weight")))
+
+
 # 🔹 DHL REQUEST (mevcut dhl_request fonksiyonunu kullanabiliriz, endpoint değiştireceğiz)
 def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params=None):
     """
@@ -86,7 +147,10 @@ def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params
 def dhl_int_rate_label():
     """
     DHL International Direct - Rate alma endpoint'i.
-    Gelen DHL fiyatına 2$ ekleyip döner (DB ile kıyaslama YOK).
+    Gelen DHL fiyatına 4$ sabit + ağırlığa göre fiyat farkı ekleyip döner
+    (DB ile kıyaslama YOK). Ayrıca Easyship'ten hesaplanan gümrük vergisi
+    toplam_cost alanına eklenir. Ağırlık farkı: ilk 1 lb 0.60 $,
+    sonraki her lb +0.60 $.
     """
     client = g.client
 
@@ -194,13 +258,15 @@ def dhl_int_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # 🎯 DB KIYASLAMASI YOK - Sadece 2$ ekle
-                    final_rate = round(total_charge + 2.0, 2)
+                    # 🎯 DB KIYASLAMASI YOK - 4$ sabit + ağırlık farkı ekle
+                    markup = int_markup_for_packages(packages)
+                    final_rate = round(total_charge + markup, 2)
 
                     # Orijinal tutar log için sakla (response'a EKLEME)
                     original_amount = round(total_charge, 2)
 
-                    # Response'u güncelle - SADECE final_rate döner
+                    # Gönderi ücretini markup ile güncelle; toplam maliyet
+                    # Easyship gümrük vergileri eklendikten sonra eklenir.
                     if "rate" in first_item:
                         first_item["rate"]["amount"] = final_rate
                         # originalAmount KALDIRILDI - sadece DB/log için
@@ -212,16 +278,64 @@ def dhl_int_rate_label():
                     if "rate" in first_item:
                         first_item.get("rate").pop("rateComponents", None)
 
+                    try:
+                        easyship_result = calculate_for_dhl_request(
+                            data,
+                            shipment_charge=final_rate,
+                            insurance_fee=data.get(
+                                "insuranceFee", data.get("insurance_fee", 0)
+                            ),
+                        )
+                    except Exception as error:
+                        app.logger.exception(
+                            "Easyship taxes & duties call failed unexpectedly. "
+                            "client_id=%s",
+                            client_id,
+                        )
+                        easyship_result = {
+                            "success": False,
+                            "error": str(error),
+                        }
+
+                    if easyship_result.get("success"):
+                        total_cost = round(
+                            final_rate + float(easyship_result["total"]), 2
+                        )
+                        first_item["total_cost"] = total_cost
+                    else:
+                        app.logger.warning(
+                            "Easyship taxes & duties could not be calculated. "
+                            "client_id=%s error=%s",
+                            client_id,
+                            easyship_result.get("error"),
+                        )
+                        error_payload = {
+                            "code": "CustomsTaxCalculationFailed",
+                            "details": public_error(
+                                easyship_result.get("error")
+                                or "Customs duty and tax could not be calculated "
+                                "for this shipment."
+                            ),
+                            "message": "Customs tax calculation failed",
+                        }
+                        if easyship_result.get("problems"):
+                            error_payload["problems"] = easyship_result["problems"]
+                        response_to_return = {"errors": [error_payload]}
+                        status_code = 502
+
                 # Log için response_value'a original amount da ekle (DB'ye kaydedilsin)
                 rate_obj = first_item.get("rate") or first_item.get("totalCharge")
-                if rate_obj:
+                if status_code != 200:
+                    response_value = str(response_to_return)
+                elif rate_obj:
                     # Log'a yazılacak string - original amount içerir
                     response_value = str({**rate_obj, "originalAmount": original_amount})
                 else:
                     response_value = str(rate_obj)
 
                 # Sadece ilk ürün objesini yanıt olarak döndür
-                response_to_return = first_item
+                if status_code == 200:
+                    response_to_return = first_item
         else:
             response_value = str(response_data)
 
@@ -250,7 +364,7 @@ def dhl_int_create_label():
     """
     DHL International Direct - Label oluşturma endpoint'i.
     1. Önce rate alır (shipping/v4/rates)
-    2. Fiyata 2$ ekler
+    2. 4$ sabit + ağırlık farkı ekler (ilk 1 lb 0.60 $, sonraki her lb +0.60 $)
     3. Sonra label oluşturur (shipping/v4/label)
     """
     client = g.client
@@ -367,8 +481,9 @@ def dhl_int_create_label():
                     total_charge = float(total_charge)
                     dhl_original_rate = round(total_charge, 2)
 
-                    # 🎯 2$ EKLE - DB kıyaslaması YOK
-                    final_rate = round(total_charge + 2.0, 2)
+                    # 🎯 4$ SABİT + AĞIRLIK FARKI - DB kıyaslaması YOK
+                    markup = int_markup_for_packages(packages)
+                    final_rate = round(total_charge + markup, 2)
 
                     if "rate" in first_item:
                         first_item.get("rate").pop("rateComponents", None)
