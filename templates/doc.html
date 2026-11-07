@@ -282,7 +282,7 @@
           <li><strong>marketPlace:</strong> Paketin ait olduğu platform.</li>
         </ul>
         <div class="code-block"><div class="code-label">Örnek istek · JSON</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
-  "orderedProductId": "GND",
+  "orderedProductId": "EXP",
   "shipTo": {
     "name": "Forrest Gump",
     "addressLine1": "102 Market St",
@@ -452,6 +452,7 @@
             <tr><td>packages[].weight</td><td>object</td><td>Zorunlu</td><td>value, unit (POUND veya KG)</td></tr>
             <tr><td>packages[].items</td><td>array</td><td><strong>Zorunlu</strong></td><td>Gümrük için eşya detayları (en az 1)</td></tr>
             <tr><td>packages[].items[].description</td><td>string</td><td>Zorunlu</td><td>Eşya açıklaması (İngilizce)</td></tr>
+            <tr><td>packages[].items[].skuNumber</td><td>string</td><td>JP, BR, IN, GB, AU ve SG için zorunlu</td><td>Ürün SKU'su (örn: WH-001)</td></tr>
             <tr><td>packages[].items[].quantity</td><td>integer</td><td>Zorunlu</td><td>Adet</td></tr>
             <tr><td>packages[].items[].itemValue</td><td>object</td><td>Zorunlu</td><td>{value: number, unit: "USD"}</td></tr>
             <tr><td>packages[].items[].weight</td><td>object</td><td>Zorunlu</td><td>{value: number, unit: "LB"}</td></tr>
@@ -464,7 +465,8 @@
 
         <h3>Örnek İstek · JSON</h3>
         <div class="code-block"><div class="code-label">International Rate Request</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
-  "shipTo": {
+          "orderedProductId": "PLT",
+          "shipTo": {
     "name": "Hans Mueller",
     "addressLine1": "Musterstrasse 12",
     "addressLine2": "",
@@ -519,6 +521,12 @@
 
       <section class="section" id="int-label-create">
         <h2>4.2 Label Oluşturma (International)</h2>
+        <div class="note"><strong>Dikkat:</strong> Japonya (JP), Brezilya (BR), Hindistan (IN), İngiltere (GB), Avustralya (AU) ve Singapur (SG) gönderilerinde her <code>packages[].items[]</code> öğesinin <code>description</code> alanıyla aynı seviyede boş olmayan bir <code>skuNumber</code> gönderilmelidir (örnek: <code>"skuNumber": "WH-001"</code>).</div>
+        <div class="code-block"><div class="code-label">Özel ülkeler için item örneği · JSON</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "description": "Wireless Bluetooth Headphones",
+  "skuNumber": "WH-001",
+  "quantity": 1
+}</code></pre></div>
         <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/create</code></div>
         

@@ -23,6 +23,9 @@ from decimal import Decimal
 from datetime import datetime
 
 
+dhl_special_countries = ["JP", "BR", "SG", "AU", "GB", "IN"]
+
+
 # 🔹 RATE LIMIT (mevcut ile aynı)
 def check_rate_limit(client):
     now = int(time.time())
@@ -455,6 +458,7 @@ def dhl_int_create_label():
             "message": "Missing weight"
         }]}), 400
 
+    destination_country = str(ship_to.get("countryCode") or "").strip().upper()
     # 🔸 PLT International için warehouse zip validation
     # pickup / distributionCenter eşleşmesi ZIP ve ZIP+4 biçimlerini destekler.
     from_zip = ship_from.get("postalCode")
@@ -481,6 +485,27 @@ def dhl_int_create_label():
             "details": "At least one item with description, value, quantity, weight, hsCode, originCountry is required for international shipments",
             "message": "Missing customs items"
         }]}), 400
+
+    if destination_country in dhl_special_countries:
+        missing_sku_items = [
+            f"package {package_index + 1}, item {item_index + 1}"
+            for package_index, package in enumerate(packages)
+            for item_index, item in enumerate(package.get("items") or [])
+            if not isinstance(item, dict)
+            or not isinstance(item.get("skuNumber"), str)
+            or not item["skuNumber"].strip()
+        ]
+        if missing_sku_items:
+            return jsonify({"errors": [{
+                "code": "InvalidInput",
+                "details": (
+                    "A non-empty packages[].items[].skuNumber string is "
+                    "required for every item when shipping to "
+                    f"{destination_country}. Invalid items: "
+                    f"{missing_sku_items}"
+                ),
+                "message": "Missing item SKU number"
+            }]}), 400
 
     carrier_id = resolve_carrier_id("PLT", "international")
     commission = get_client_commission(client_id, carrier_id)
