@@ -117,11 +117,36 @@ class RequestLog(db.Model):
     client = db.relationship("Client", backref="request_logs")
 
 
+class Carrier(db.Model):
+    __tablename__ = "carrier"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    international = db.Column(db.Text, nullable=True)
+
+
+class Commission(db.Model):
+    __tablename__ = "commisions"
+    __table_args__ = (
+        db.UniqueConstraint("client_id", "carrier_id", name="uq_commisions_client_carrier"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    shipping_rate = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    libre_rate = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"), nullable=False, index=True)
+
+    client = db.relationship("Client", backref="commissions")
+    carrier = db.relationship("Carrier", backref="commissions")
+
+
 class ShipmentLog(db.Model):
     __tablename__ = "shipment_logs"
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.now)
     client_id = db.Column(db.Integer, db.ForeignKey("clients.id"))
+    carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"), nullable=True)
 
     action = db.Column(db.String(50))
     # örnek: "get_label", "cancel_label"
@@ -135,7 +160,15 @@ class ShipmentLog(db.Model):
     response = db.Column(db.Text, nullable=True)
     # amazon response (debug için)
 
+    zip_code = db.Column(db.String(20), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    country = db.Column(db.String(100), nullable=True)
+    warehouse_zip_code = db.Column(db.String(20), nullable=True)
+    customs_fee = db.Column(db.Numeric(10, 2), nullable=True)
+    shipping_fee = db.Column(db.Numeric(10, 2), nullable=True)
+
     client = db.relationship("Client", backref="shipment_logs")
+    carrier = db.relationship("Carrier", backref="shipment_logs")
 
 
 class ShippingRate(db.Model):
@@ -284,5 +317,3 @@ class InternationalLabel(db.Model):
     item_quantity = db.Column(db.Integer, default=1)     # Adet
 
     client = db.relationship("Client", backref="international_labels")
-
-

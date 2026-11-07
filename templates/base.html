@@ -44,6 +44,13 @@
     <!-- 📁 SIDEBAR -->
     <aside class="pod-sidebar">
 
+      <!-- CARRIER -->
+      <div class="sidebar-item">
+        <a href="{{ url_for('admin_carriers') }}" class="sidebar-link sidebar-sublink">
+          🚚 Carriers
+        </a>
+      </div>
+
       <!-- CLIENT DROPDOWN -->
       <div class="sidebar-item">
         <button class="sidebar-link sidebar-toggle" type="button">
@@ -104,6 +111,12 @@
         </div>
       </div>
 
+      <!-- LOGS -->
+      <div class="sidebar-item">
+        <a href="{{ url_for('admin_shipment_logs') }}" class="sidebar-link sidebar-sublink">
+          📜 Logs
+        </a>
+      </div>
 
       <!-- ileride -->
       <!--

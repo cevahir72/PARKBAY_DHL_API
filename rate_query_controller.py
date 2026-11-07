@@ -1,7 +1,7 @@
 from flask_app import app, db
 from flask import request, jsonify, render_template
 from flask_login import login_required
-from model import Client
+from model import Carrier, Client
 from dhl_label_controller import dhl_rate_label
 from dhl_int_label_controller import dhl_int_rate_label
 
@@ -33,6 +33,13 @@ RATE_HANDLERS = {
 @login_required
 def rate_query():
     clients = Client.query.filter_by(is_active=True).order_by(Client.username).all()
+    domestic_services = [
+        carrier.name.strip()
+        for carrier in Carrier.query.filter(
+            db.func.lower(db.func.trim(Carrier.international)) == "domestic"
+        ).order_by(Carrier.name).all()
+        if carrier.name and carrier.name.strip()
+    ]
     warehouses = [
         {
             "zip": zip_code,
@@ -46,6 +53,7 @@ def rate_query():
         "rate_query.html",
         clients=clients,
         warehouses=warehouses,
+        domestic_services=domestic_services,
     )
 
 
@@ -69,6 +77,9 @@ def rate_query_request():
 
     if not isinstance(payload, dict):
         return jsonify({"error": "payload is required"}), 400
+
+    if mode == "domestic" and not str(payload.get("orderedProductId") or "").strip():
+        return jsonify({"error": "Domestic service type is required. Select EXP or GND."}), 400
 
     try:
         client_id = int(client_id)

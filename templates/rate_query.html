@@ -7,36 +7,61 @@
   <div>
     <h2 class="mb-1">Rate Query</h2>
     <p class="mb-0">DHL Domestic / International fiyat sorgulaması.</p>
+    <div class="alert alert-info py-2 mt-2 mb-0" role="status">
+      Öncelikle query type'ı seçiniz.
+    </div>
   </div>
 </div>
 
 <form id="rateQueryForm" novalidate>
   <div class="orders-box p-3">
-
-    <!-- QUERY / CLIENT / WAREHOUSE -->
-    <div class="row g-3">
-      <div class="col-md-4">
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
         <label class="form-label" for="queryMode">Query Type</label>
         <select id="queryMode" class="form-select">
-          <option value="domestic" selected>Domestic</option>
+          <option value="" selected disabled>Select query type...</option>
+          <option value="domestic">Domestic</option>
           <option value="international">International</option>
         </select>
       </div>
-
-      <div class="col-md-4">
-        <label class="form-label" for="clientId">Client</label>
-        <select id="clientId" class="form-select" required>
-          {% for client in clients %}
-          <option value="{{ client.id }}">{{ client.username }}</option>
+      <div class="col-md-6 d-none" id="serviceTypeGroup">
+        <label class="form-label" for="serviceType">Domestic Service Type</label>
+        <select id="serviceType" class="form-select">
+          <option value="">Select service type...</option>
+          {% for service in domestic_services %}
+          <option value="{{ service }}">{{ service }}</option>
           {% endfor %}
         </select>
-        {% if not clients %}
-        <div class="form-text text-danger">Aktif client bulunamadı.</div>
+        {% if not domestic_services %}
+        <div class="form-text text-danger">Domestic carrier service types are not configured.</div>
         {% endif %}
       </div>
+    </div>
 
-      <div class="col-md-4">
-        <label class="form-label" for="warehouse">Warehouse (Ship From)</label>
+    <fieldset id="queryFields" class="rate-query-fields" disabled>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="clientId">Client</label>
+          <select id="clientId" class="form-select" required>
+            <option value="" selected disabled>Select client...</option>
+            {% for client in clients %}
+            <option value="{{ client.id }}">{{ client.username }}</option>
+            {% endfor %}
+          </select>
+          {% if not clients %}
+          <div class="form-text text-danger">Aktif client bulunamadı.</div>
+          {% endif %}
+        </div>
+      </div>
+
+    <hr class="my-4">
+
+    <div class="row g-4">
+    <div class="col-lg-6">
+      <h6 class="mb-3">Ship From</h6>
+      <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label" for="warehouse">Warehouse</label>
         <select id="warehouse" class="form-select" required>
           <option value="" selected disabled>Select warehouse...</option>
           {% for warehouse in warehouses %}
@@ -46,24 +71,17 @@
           {% endfor %}
         </select>
       </div>
+    <div class="col-md-6">
+      <label class="form-label" for="shipFromName">Name</label>
+      <input type="text" id="shipFromName" class="form-control" required>
     </div>
-
-    <hr class="my-4">
-
-    <!-- SHIP FROM -->
-    <h6 class="mb-3">Ship From</h6>
-    <div class="row g-3">
-      <div class="col-md-6">
-        <label class="form-label" for="shipFromName">Name</label>
-        <input type="text" id="shipFromName" class="form-control" placeholder="RV-TX Warehouse">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label" for="shipFromCompany">Company Name</label>
-        <input type="text" id="shipFromCompany" class="form-control" placeholder="RV-TX">
-      </div>
-      <div class="col-md-8">
-        <label class="form-label" for="shipFromAddress1">Address Line 1</label>
-        <input type="text" id="shipFromAddress1" class="form-control" placeholder="18120 West Bellfort, Ste G">
+    <div class="col-md-6">
+      <label class="form-label" for="shipFromCompany">Company Name</label>
+      <input type="text" id="shipFromCompany" class="form-control" required>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label" for="shipFromAddress1">Address Line 1</label>
+      <input type="text" id="shipFromAddress1" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipFromAddress2">Address Line 2</label>
@@ -71,15 +89,15 @@
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipFromCity">City</label>
-        <input type="text" id="shipFromCity" class="form-control" placeholder="Richmond">
+        <input type="text" id="shipFromCity" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipFromState">State / Region</label>
-        <input type="text" id="shipFromState" class="form-control" placeholder="TX" maxlength="2">
+        <input type="text" id="shipFromState" class="form-control" required maxlength="2">
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipFromCountry">Country Code</label>
-        <input type="text" id="shipFromCountry" class="form-control" value="US" maxlength="2">
+        <input type="text" id="shipFromCountry" class="form-control" maxlength="2" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipFromPostal">Postal Code</label>
@@ -94,16 +112,15 @@
         <label class="form-label" for="shipFromEmail">E-mail</label>
         <input type="email" id="shipFromEmail" class="form-control">
       </div>
-    </div>
+        </div>
+      </div>
 
-    <hr class="my-4">
-
-    <!-- SHIP TO -->
-    <h6 class="mb-3">Ship To</h6>
-    <div class="row g-3">
+      <div class="col-lg-6">
+        <h6 class="mb-3">Ship To</h6>
+        <div class="row g-3">
       <div class="col-md-6">
         <label class="form-label" for="shipToName">Name</label>
-        <input type="text" id="shipToName" class="form-control" required placeholder="Forrest Gump">
+        <input type="text" id="shipToName" class="form-control" required>
       </div>
       <div class="col-md-6">
         <label class="form-label" for="shipToCompany">Company Name</label>
@@ -111,7 +128,7 @@
       </div>
       <div class="col-md-8">
         <label class="form-label" for="shipToAddress1">Address Line 1</label>
-        <input type="text" id="shipToAddress1" class="form-control" required placeholder="102 Market St">
+        <input type="text" id="shipToAddress1" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToAddress2">Address Line 2</label>
@@ -119,27 +136,28 @@
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToCity">City</label>
-        <input type="text" id="shipToCity" class="form-control" required placeholder="Sanfrancisco">
+        <input type="text" id="shipToCity" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToState">State / Region</label>
-        <input type="text" id="shipToState" class="form-control" placeholder="CA">
+        <input type="text" id="shipToState" class="form-control">
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToCountry">Country Code</label>
-        <input type="text" id="shipToCountry" class="form-control" value="US" maxlength="2" required>
+        <input type="text" id="shipToCountry" class="form-control" maxlength="2" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToPostal">Postal Code</label>
-        <input type="text" id="shipToPostal" class="form-control" required placeholder="94102">
+        <input type="text" id="shipToPostal" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToPhone">Phone</label>
-        <input type="text" id="shipToPhone" class="form-control" placeholder="555 555 55 55">
+        <input type="text" id="shipToPhone" class="form-control" required>
       </div>
       <div class="col-md-4">
         <label class="form-label" for="shipToEmail">E-mail</label>
-        <input type="email" id="shipToEmail" class="form-control" required placeholder="1234@gmail.com">
+        <input type="email" id="shipToEmail" class="form-control" required>
+        </div>
       </div>
     </div>
 
@@ -215,6 +233,7 @@
       </div>
     </div>
   </div>
+  </fieldset>
 </form>
 
 <!-- ERROR -->
@@ -273,12 +292,21 @@
   #rateQueryForm.is-pending {
     opacity: .75;
   }
+  .rate-query-fields {
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
 </style>
 
 <script>
 (function () {
   const form = document.getElementById('rateQueryForm');
   const modeEl = document.getElementById('queryMode');
+  const queryFields = document.getElementById('queryFields');
+  const serviceTypeGroup = document.getElementById('serviceTypeGroup');
+  const serviceTypeEl = document.getElementById('serviceType');
   const clientEl = document.getElementById('clientId');
   const warehouseEl = document.getElementById('warehouse');
   const itemsSection = document.getElementById('itemsSection');
@@ -516,6 +544,74 @@
     }
   }
 
+  function applyAddressDefaults() {
+    const shipFromDefaults = {
+      shipFromName: 'RV-TX',
+      shipFromCompany: 'RV-TX',
+      shipFromAddress1: '3201 SKYLANE DR , STE 100',
+      shipFromAddress2: '',
+      shipFromCity: 'Carrollton',
+      shipFromState: 'TX',
+      shipFromCountry: 'US',
+      shipFromEmail: '1234@gmail.com',
+      shipFromPhone: '555 555 55 55'
+    };
+    Object.entries(shipFromDefaults).forEach(([id, value]) => {
+      byId(id).value = value;
+    });
+
+    const defaultWarehouse = Array.from(warehouseEl.options)
+      .find((option) => option.value === '75006-2527');
+    if (defaultWarehouse) {
+      warehouseEl.value = defaultWarehouse.value;
+      byId('shipFromPostal').value = defaultWarehouse.value;
+    }
+
+    const shipToDefaults = modeEl.value === 'international'
+      ? {
+          shipToName: 'Hans Mueller',
+          shipToAddress1: 'Musterstrasse 12',
+          shipToAddress2: '',
+          shipToCity: 'Berlin',
+          shipToState: 'BE',
+          shipToCountry: 'DE',
+          shipToPostal: '10115',
+          shipToEmail: 'hans.mueller@example.de',
+          shipToPhone: '49301234567'
+        }
+      : {
+          shipToName: 'John Test',
+          shipToAddress1: '11605 1/2 W Pico Blvd',
+          shipToAddress2: '',
+          shipToCity: 'Los Angeles',
+          shipToState: 'CA',
+          shipToCountry: 'US',
+          shipToPostal: '90064',
+          shipToEmail: '1234@gmail.com',
+          shipToPhone: '555 555 55 55'
+        };
+    Object.entries(shipToDefaults).forEach(([id, value]) => {
+      byId(id).value = value;
+    });
+  }
+
+  function applyQueryType() {
+    const hasMode = modeEl.value === 'domestic' || modeEl.value === 'international';
+    queryFields.disabled = !hasMode;
+    const isDomestic = modeEl.value === 'domestic';
+    serviceTypeGroup.classList.toggle('d-none', !isDomestic);
+    serviceTypeEl.required = isDomestic;
+    if (!isDomestic) {
+      serviceTypeEl.value = '';
+    }
+    if (hasMode) {
+      applyAddressDefaults();
+    }
+    applyMode();
+    hideError();
+    hideResult();
+  }
+
   function collectItems() {
     return Array.from(itemsContainer.querySelectorAll('.item-row')).map((row) => {
       const get = (selector) => {
@@ -606,6 +702,9 @@
         phoneNumber: valueOf('shipToPhone')
       },
       packages: [packageData],
+      orderedProductId: modeEl.value === 'domestic'
+        ? valueOf('serviceType')
+        : undefined,
       marketPlace: valueOf('marketPlace'),
       isTestLabel: byId('isTestLabel').checked
     });
@@ -613,7 +712,7 @@
 
   modeEl.addEventListener('change', () => {
     if (isSubmitting) return;
-    applyMode();
+    applyQueryType();
   });
 
   warehouseEl.addEventListener('change', () => {
@@ -635,6 +734,17 @@
 
     if (!clientEl.value) {
       showError('Lütfen bir client seçin.');
+      return;
+    }
+
+    if (!modeEl.value) {
+      showError('Öncelikle query type ı seçiniz.');
+      return;
+    }
+
+    if (modeEl.value === 'domestic' && !serviceTypeEl.value.trim()) {
+      showError('Domestic sorgu için lütfen EXP veya GND servis türünü seçin.');
+      serviceTypeEl.focus();
       return;
     }
 
@@ -693,9 +803,8 @@
 
     form.reset();
     itemsContainer.innerHTML = '';
-    addItem();
-
-    modeEl.value = 'domestic';
+    queryFields.disabled = true;
+    modeEl.value = '';
     applyMode();
 
     hideError();
@@ -715,7 +824,7 @@
     if (link) event.preventDefault();
   }, true);
 
-  // İlk yükleme
+  // İlk yüklemede sadece query type aktif olsun.
   applyMode();
 })();
 </script>

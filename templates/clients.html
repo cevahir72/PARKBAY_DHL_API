@@ -20,7 +20,7 @@
           <th>ID</th>
           <th>Username</th>
           <th>Reference Code</th>
-          <th>Com Fee ($)</th>
+          <th>Amazon Com Fee ($)</th>
           <th>Rate Limit</th>
           <th>Token</th>
           <th>Token Expiry</th>
@@ -50,6 +50,8 @@
           <td>
             <button class="btn btn-secondary btn-sm" data-bs-toggle="modal"
                     data-bs-target="#editClientModal{{ client.id }}">Edit</button>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal"
+                    data-bs-target="#clientCommissionsModal{{ client.id }}">Commissions</button>
           </td>
         </tr>
 
@@ -72,7 +74,7 @@
                     <input type="password" name="password">
                   </div>
                   <div class="form-row">
-                    <label>Com Fee ($)</label>
+                    <label>Amazon Com Fee ($)</label>
                     <input type="number" name="com_fee" step="0.01" value="{{ client.com_fee }}" required>
                   </div>
                   <div class="form-row">
@@ -109,6 +111,122 @@
   </div>
 </div>
 
+{% for client in clients %}
+<div class="modal fade" id="clientCommissionsModal{{ client.id }}" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ client.username }} — Commissions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <h6>Configured commissions</h6>
+        <div class="table-responsive mb-4">
+          <table class="table table-sm table-striped">
+            <thead>
+              <tr><th>Carrier</th><th>Shipping rate ($)</th><th>Libre rate ($)</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {% for commission in client.commissions %}
+              <tr>
+                <td>{{ commission.carrier.name }} ({{ commission.carrier.international }})</td>
+                <td>{{ commission.shipping_rate }}</td>
+                <td>{{ commission.libre_rate }}</td>
+                <td class="d-flex gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal"
+                          data-bs-target="#editCommissionModal{{ commission.id }}">Edit</button>
+                  <form action="{{ url_for('admin_delete_commission', client_id=client.id, commission_id=commission.id) }}"
+                        method="POST" class="commission-delete-form">
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center">No commissions configured.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <h6>Add commission</h6>
+        <form action="{{ url_for('admin_add_commission', client_id=client.id) }}"
+              method="POST" class="commission-form">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label">Carrier</label>
+              <select name="carrier_id" class="form-select" required>
+                <option value="">Select carrier</option>
+                {% for carrier in carriers %}
+                <option value="{{ carrier.id }}">{{ carrier.name }} ({{ carrier.international or "type not set" }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Shipping rate ($)</label>
+              <input type="number" name="shipping_rate" class="form-control"
+                     min="0" step="0.01" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Libre rate ($)</label>
+              <input type="number" name="libre_rate" class="form-control"
+                     min="0" step="0.01" value="0.00" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="submit" class="btn btn-primary w-100">Add</button>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% for commission in client.commissions %}
+<div class="modal fade" id="editCommissionModal{{ commission.id }}" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('admin_edit_commission', client_id=client.id, commission_id=commission.id) }}"
+            method="POST" class="commission-form">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit commission — {{ client.username }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Carrier</label>
+            <select name="carrier_id" class="form-select" required>
+              <option value="">Select carrier</option>
+              {% for carrier in carriers %}
+              <option value="{{ carrier.id }}" {% if commission.carrier_id == carrier.id %}selected{% endif %}>
+                {{ carrier.name }} ({{ carrier.international or "type not set" }})
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Shipping rate ($)</label>
+            <input type="number" name="shipping_rate" class="form-control"
+                   min="0" step="0.01" value="{{ commission.shipping_rate }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Libre rate ($)</label>
+            <input type="number" name="libre_rate" class="form-control"
+                   min="0" step="0.01" value="{{ commission.libre_rate }}" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endfor %}
+
 <!-- Add Client Modal -->
 <div class="modal fade" id="addClientModal" tabindex="-1">
   <div class="modal-dialog">
@@ -132,7 +250,7 @@
             <input type="text" name="reference_code" required>
           </div>
           <div class="form-row">
-            <label>Com Fee ($)</label>
+            <label>Amazon Com Fee ($)</label>
             <input type="number" name="com_fee" step="0.01" value="0.00" required>
           </div>
           <div class="form-row">
@@ -149,4 +267,28 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".commission-form").forEach(form => {
+    form.addEventListener("submit", event => {
+      const shippingRate = Number(form.elements.shipping_rate.value);
+      const libreRate = Number(form.elements.libre_rate.value);
+      if (!form.elements.carrier_id.value || !Number.isFinite(shippingRate) ||
+          !Number.isFinite(libreRate) || shippingRate < 0 || libreRate < 0) {
+        event.preventDefault();
+        form.reportValidity();
+      }
+    });
+  });
+
+  document.querySelectorAll(".commission-delete-form").forEach(form => {
+    form.addEventListener("submit", event => {
+      if (!confirm("Delete this commission for the selected client and carrier?")) {
+        event.preventDefault();
+      }
+    });
+  });
+</script>
 {% endblock %}

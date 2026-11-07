@@ -282,6 +282,7 @@
           <li><strong>marketPlace:</strong> Paketin ait olduğu platform.</li>
         </ul>
         <div class="code-block"><div class="code-label">Örnek istek · JSON</div><button class="copy-button" type="button">Kopyala</button><pre><code>{
+  "orderedProductId": "GND",
   "shipTo": {
     "name": "Forrest Gump",
     "addressLine1": "102 Market St",
@@ -338,7 +339,7 @@
 
       <section class="section" id="label-create">
         <h2>3.2 Label Oluşturma</h2>
-        <p>DHL kargo etiketi oluşturur. İstek gövdesi rate sorgusuyla aynı gönderi alanlarını kullanır. Domestic etiket oluşturma için hizmet kodu <code>EXP</code> kullanılır ve yanıtta da <code>EXP</code> döndürülür.</p>
+        <p>DHL kargo etiketi oluşturur. İstek gövdesi rate sorgusuyla aynı gönderi alanlarını kullanır.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/label/create</code></div>
         <h3>Başarılı Yanıt — HTTP 200 OK</h3>
         <div class="table-wrap"><table>
@@ -514,12 +515,11 @@
   "total_cost": 28.34
 }</code></pre></div>
 
-        <div class="note"><strong>Not:</strong> Yanıttaki <code>rate.amount</code>, DHL ham gönderi ücretine <strong>4$ sabit ücret</strong> ve ağırlığa göre her libre için <strong>0.60$</strong> eklenmiş halidir. <code>total_cost</code>, bu gönderi ücretine gümrük duty + tax toplamı eklenerek hesaplanır. Easyship bilgileri müşteriye gösterilmez.</div>
       </section>
 
       <section class="section" id="int-label-create">
         <h2>4.2 Label Oluşturma (International)</h2>
-        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur. Önce DHL rate alınır, 4$ sabit ücret ve ağırlığa göre her libre için 0.60$ eklenir. Ardından gümrük vergisi (duty) ve tax hesaplanır; etiket bu hesaplama başarılı olduktan sonra üretilir.</p>
+        <p>DHL Parcel International Direct (PLT) ürünü için uluslararası kargo etiketi oluşturur.</p>
         <div class="endpoint"><span class="method">POST</span><code>/dhl/int/label/create</code></div>
         
         <h3>İstek Gövdesi</h3>
@@ -540,10 +540,8 @@
           </tbody>
         </table></div>
 
-        <div class="note"><strong>Gizli veriler:</strong> <code>amz_cost</code>, <code>my_cost</code>, <code>customs_value</code>, tax ve duty bilgileri müşteriye açılmaz; yalnızca veritabanında saklanır.</div>
 
         <h3>Maliyet Hesabı</h3>
-        <p><code>amz_cost</code> = DHL ham fiyatı. <code>my_cost</code> = <code>amz_cost</code> + 4$ sabit ücret + ağırlığa göre her libre için 0.60$. <code>customs_value</code> = <code>duty</code> + <code>tax</code>. <code>total_cost</code> = <code>my_cost</code> + <code>customs_value</code>.</p>
 
         <div class="note"><strong>Yanıt:</strong> International yanıtında domestic yanıtındaki <code>totalCharge</code> alanının yerini <code>total_cost</code> alır. Etiket base64 (<code>labels[].labelData</code>), takip numarası (<code>labels[].trackingId</code>, <code>labels[].dhlPackageId</code>) ve domestic yanıtındaki diğer alanlar aynı şekilde döner.</div>
 
@@ -784,7 +782,7 @@
             <tr><td><code>shipFrom.postalCode</code></td><td><code>pickup</code> + <code>distributionCenter</code> mapping</td><td><code>pickup</code> + <code>distributionCenter</code> mapping (aynı)</td></tr>
             <tr><td><code>packages[].weight.unit</code></td><td><code>LB</code> (POUND→LB)</td><td><code>LB</code> (POUND→LB)</td></tr>
             <tr><td><code>packages[].dimensions.unit</code></td><td><code>IN</code> (INCH→IN)</td><td><code>IN</code> (INCH→IN)</td></tr>
-            <tr><td><code>orderedProductId</code></td><td>Rate sorgusunda <strong>"GND"</strong> (Ground), etiket oluşturmada <strong>"EXP"</strong> (Expedited)</td><td><strong>"PLT"</strong> (Parcel International)</td></tr>
+            <tr><td><code>orderedProductId</code></td><td>İstek gövdesinde seçilen ve <code>carrier</code> tablosunda <code>international = "domestic"</code> olarak kayıtlı servis kodu (ör. <strong>"GND"</strong>, <strong>"EXP"</strong>)</td><td><strong>"PLT"</strong> (Parcel International)</td></tr>
             <tr><td><code>service</code></td><td><strong>"DELCON"</strong></td><td><strong>"DELCON"</strong></td></tr>
             <tr><td><code>packages[].items</code></td><td>Yok (domestic gümrük yok)</td><td><strong>Zorunlu</strong> → <code>customsDetails</code> (root)</td></tr>
             <tr><td>Rate endpoint</td><td><code>POST /shipping/v4/products</code></td><td><code>POST /shipping/v4/products</code></td></tr>
@@ -808,7 +806,6 @@
           </tbody>
         </table></div>
 
-        <div class="note"><strong>Özet:</strong> International için müşteri JSON'daki <code>packages[].items</code> verileri alınır, DHL şemasına uygun <code>customsDetails</code> array'i (root seviyesinde) oluşturulur. <code>packageDetail.items</code> ASLA gönderilmez.</div>
       </section>
     </main>
   </div>

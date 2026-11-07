@@ -151,6 +151,8 @@ from user_controller import *
 from client_controller import *
 
 from label_controller import *
+from carrier_controller import *
+from log_controller import *
 
 from rate_controller import *
 

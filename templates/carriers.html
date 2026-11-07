@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Carriers | parkbey{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2>Carrier Listesi</h2>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCarrierModal">
+    + Carrier Ekle
+  </button>
+</div>
+
+<div class="orders-box">
+  <div class="table-responsive">
+    <table class="pod-table table table-striped">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>İşlemler</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for carrier in carriers %}
+        <tr>
+          <td>{{ carrier.id }}</td>
+          <td>{{ carrier.name }}</td>
+          <td>{{ carrier.international }}</td>
+          <td class="d-flex gap-2">
+            <button class="btn btn-secondary btn-sm" data-bs-toggle="modal"
+                    data-bs-target="#editCarrierModal{{ carrier.id }}">Güncelle</button>
+            <form action="{{ url_for('admin_delete_carrier', carrier_id=carrier.id) }}"
+                  method="POST"
+                  onsubmit="return confirm('DİKKAT: Bu işlemi yapmadan önce kontolünü sağlayın. Bu kayıtın kullanıldığı bir servis varsa, apiyi kullanılamaz hale getirebilir. Silmek istiyor musunuz?');">
+              <button type="submit" class="btn btn-danger btn-sm">Sil</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% for carrier in carriers %}
+        <div class="modal fade" id="editCarrierModal{{ carrier.id }}" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <form action="{{ url_for('admin_edit_carrier', carrier_id=carrier.id) }}"
+                    method="POST" class="carrier-form">
+                <div class="modal-header">
+                  <h5 class="modal-title">Carrier Güncelle: {{ carrier.name }}</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                  <div class="alert alert-warning" role="alert">
+                    DİKKAT: Bu işlemi yapmadan önce kontolünü sağlayın. Bu kayıtın kullanıldığı bir servis varsa, apiyi kullanılamaz hale getirebilir.
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label" for="carrier-name-{{ carrier.id }}">Name</label>
+                    <input class="form-control" id="carrier-name-{{ carrier.id }}"
+                           type="text" name="name" value="{{ carrier.name }}" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label" for="carrier-type-{{ carrier.id }}">Gönderi türü</label>
+                    <select class="form-select" id="carrier-type-{{ carrier.id }}"
+                            name="international" required>
+                      <option value="">Seçiniz</option>
+                      <option value="domestic" {% if carrier.international == "domestic" %}selected{% endif %}>Domestic</option>
+                      <option value="international" {% if carrier.international == "international" %}selected{% endif %}>International</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="submit" class="btn btn-primary">Değişiklikleri Kaydet</button>
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+{% endfor %}
+
+<div class="modal fade" id="addCarrierModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('admin_add_carrier') }}" method="POST" class="carrier-form">
+        <div class="modal-header">
+          <h5 class="modal-title">Carrier Ekle</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label" for="new-carrier-name">Name</label>
+            <input class="form-control" id="new-carrier-name" type="text" name="name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="new-carrier-type">Gönderi türü</label>
+            <select class="form-select" id="new-carrier-type" name="international" required>
+              <option value="">Seçiniz</option>
+              <option value="domestic">Domestic</option>
+              <option value="international">International</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Carrier Oluştur</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".carrier-form").forEach(form => {
+    form.addEventListener("submit", event => {
+      const name = form.elements.name.value.trim();
+      const type = form.elements.international.value;
+      if (!name || !["domestic", "international"].includes(type)) {
+        event.preventDefault();
+        form.reportValidity();
+        return;
+      }
+
+      if (form.action.includes("/edit/") && !confirm(
+        "DİKKAT: Bu işlemi yapmadan önce kontolünü sağlayın. Bu kayıtın kullanıldığı bir servis varsa, apiyi kullanılamaz hale getirebilir. Güncellemek istiyor musunuz?"
+      )) {
+        event.preventDefault();
+      }
+    });
+  });
+</script>
+{% endblock %}
