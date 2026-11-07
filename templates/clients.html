@@ -124,7 +124,7 @@
         <div class="table-responsive mb-4">
           <table class="table table-sm table-striped">
             <thead>
-              <tr><th>Carrier</th><th>Shipping rate ($)</th><th>Libre rate ($)</th><th>Actions</th></tr>
+              <tr><th>Carrier</th><th>Shipping rate ($)</th><th>Libre rate ($)</th><th>Active</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {% for commission in client.commissions %}
@@ -132,6 +132,17 @@
                 <td>{{ commission.carrier.name }} ({{ commission.carrier.international }})</td>
                 <td>{{ commission.shipping_rate }}</td>
                 <td>{{ commission.libre_rate }}</td>
+                <td>
+                  <form action="{{ url_for('admin_toggle_commission', client_id=client.id, commission_id=commission.id) }}"
+                        method="POST" class="commission-active-form">
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input commission-active-toggle" type="checkbox"
+                             name="active" value="true" role="switch"
+                             aria-label="Toggle {{ commission.carrier.name }} commission"
+                             {% if commission.active %}checked{% endif %}>
+                    </div>
+                  </form>
+                </td>
                 <td class="d-flex gap-2">
                   <button type="button" class="btn btn-secondary btn-sm" data-bs-toggle="modal"
                           data-bs-target="#editCommissionModal{{ commission.id }}">Edit</button>
@@ -142,7 +153,7 @@
                 </td>
               </tr>
               {% else %}
-              <tr><td colspan="4" class="text-center">No commissions configured.</td></tr>
+              <tr><td colspan="5" class="text-center">No commissions configured.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -289,6 +300,10 @@
         event.preventDefault();
       }
     });
+  });
+
+  document.querySelectorAll(".commission-active-toggle").forEach(toggle => {
+    toggle.addEventListener("change", () => toggle.form.submit());
   });
 </script>
 {% endblock %}

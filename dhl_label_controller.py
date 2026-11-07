@@ -1,6 +1,12 @@
 from flask_app import app, db, client_token_required
 from flask import request, jsonify, g
-from model import ShipmentLog, Label
+from model import ShipmentLog, Label, Carrier
+from shipment_log_helper import (
+    dhl_products_shipping_fee,
+    get_client_commission,
+    resolve_carrier_id,
+    shipment_log_fields,
+)
 import time
 import requests
 from data_helper import dhl_request_helper, normalize_package_weights, missing_warehouse_fields, PICKUP_DICT
@@ -62,6 +68,46 @@ def invalid_warehouse_response(data, payload):
     ]}), 400
 
 
+def validate_domestic_service(data):
+    requested_service = data.get("orderedProductId")
+    domestic_carriers = Carrier.query.filter(
+        db.func.lower(db.func.trim(Carrier.international)) == "domestic"
+    ).all()
+    valid_services = sorted({
+        carrier.name.strip().upper()
+        for carrier in domestic_carriers
+        if carrier.name and carrier.name.strip()
+    })
+
+    service_code = (
+        requested_service.strip().upper()
+        if isinstance(requested_service, str)
+        else ""
+    )
+    if service_code in valid_services:
+        return service_code, None
+
+    expected_services = ", ".join(valid_services) if valid_services else "none configured"
+    return None, (jsonify({"errors": [
+        {
+            "code": "InvalidServiceType",
+            "details": (
+                f"Invalid service type '{service_code}'. "
+                f"Expected data: {expected_services}."
+            ),
+            "message": "Invalid service type"
+        }
+    ]}), 400)
+
+
+def missing_commission_response():
+    return jsonify({"errors": [{
+        "code": "CommissionNotConfigured",
+        "details": "No active commission is configured for this client and carrier. Contact the administrator.",
+        "message": "Carrier commission is not configured or is inactive"
+    }]}), 409
+
+
 # 🔹 DHL REQUEST
 def dhl_request(endpoint, payload=None, method="POST", is_test=False, params=None):
     # DHL Sandbox ve Production URL yapılandırması
@@ -121,11 +167,9 @@ def dhl_rate_label():
         ]}), 429
 
     # DHL çağrısı boyunca MySQL bağlantısını açık tutmamak için
-    # istemci bilgilerini al ve oturumu serbest bırak.
+    # istemci bilgilerini al.
     client_id = client.id
     reference_code = client.reference_code
-    com_fee = client.com_fee
-    release_db_connection()
 
     data = request.json or {}
     normalize_package_weights(data)
@@ -140,12 +184,24 @@ def dhl_rate_label():
             }
         ]}), 400
 
-    dhl_payload = dhl_request_helper(data, reference_code, "rate")
+    service_code, error_response = validate_domestic_service(data)
+    if error_response:
+        return error_response
+
+    dhl_payload = dhl_request_helper(
+        data, reference_code, "rate", ordered_product_id=service_code
+    )
+    carrier_id = resolve_carrier_id(service_code, "domestic")
+    commission = get_client_commission(client_id, carrier_id)
+    if commission is None:
+        return missing_commission_response()
+    shipping_commission = float(commission.shipping_rate)
 
     error_response = invalid_warehouse_response(data, dhl_payload)
     if error_response:
         return error_response
 
+    release_db_connection()
     is_test_label = data.get("isTestLabel", False)
 
     # DHL Rate endpoint çağrısı (shipping/v4/products)
@@ -170,8 +226,8 @@ def dhl_rate_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata client com_fee (komisyon) ekle
-                    mapped_rate = total_charge + float(com_fee or 0)
+                    # DHL fiyatına müşteri/carrier komisyonu ekle.
+                    mapped_rate = total_charge + shipping_commission
 
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
                     first_product["rate"]["amount"] = round(mapped_rate, 2)
@@ -194,6 +250,11 @@ def dhl_rate_label():
             reference_id=response_data.get("pickup"),
             status="success" if status_code == 200 else "failed",
             response=response_value,
+            **shipment_log_fields(
+                data,
+                carrier_id=carrier_id,
+                shipping_fee=dhl_products_shipping_fee(response_data),
+            ),
         )
 
         db.session.add(log)
@@ -223,11 +284,9 @@ def dhl_create_label():
         ]}), 429
 
     # DHL rate + label çağrıları boyunca MySQL bağlantısını açık
-    # tutmamak için istemci bilgilerini al ve oturumu serbest bırak.
+    # tutmamak için istemci bilgilerini al.
     client_id = client.id
     reference_code = client.reference_code
-    com_fee = client.com_fee
-    release_db_connection()
 
     data = request.json or {}
     normalize_package_weights(data)
@@ -242,14 +301,32 @@ def dhl_create_label():
             }
         ]}), 400
 
+    service_code, error_response = validate_domestic_service(data)
+    if error_response:
+        return error_response
+
     rate_payload = dhl_request_helper(
-        data, reference_code, "rate", ordered_product_id="EXP"
+        data, reference_code, "rate", ordered_product_id=service_code
     )
+    carrier_id = resolve_carrier_id(service_code, "domestic")
+    commission = get_client_commission(client_id, carrier_id)
+    if commission is None:
+        return missing_commission_response()
+    shipping_commission = float(commission.shipping_rate)
 
     error_response = invalid_warehouse_response(data, rate_payload)
     if error_response:
         return error_response
 
+    dhl_payload = dhl_request_helper(
+        data, reference_code, "create", ordered_product_id=service_code
+    )
+
+    error_response = invalid_warehouse_response(data, dhl_payload)
+    if error_response:
+        return error_response
+
+    release_db_connection()
     is_test_label = data.get("isTestLabel", False)
 
     # DHL Rate endpoint çağrısı (shipping/v4/products)
@@ -272,8 +349,8 @@ def dhl_create_label():
                 if total_charge is not None:
                     total_charge = float(total_charge)
 
-                    # API'den gelen fiyata client com_fee (komisyon) ekle
-                    mapped_rate = total_charge + float(com_fee or 0)
+                    # DHL fiyatına müşteri/carrier komisyonu ekle.
+                    mapped_rate = total_charge + shipping_commission
                     mapped_rate = round(mapped_rate, 2)
                     # Ürünün fiyatını güncellenmiş tutarla değiştiriyoruz
 
@@ -294,8 +371,13 @@ def dhl_create_label():
                 client_id=client_id,
                 action="dhl_rate_label TEST" if is_test_label else "dhl_rate_label",
                 reference_id=rate_response_data.get("pickup"),
-                status="success" if rate_status_code == 200 else "failed",
+                status="failed",
                 response=response_value,
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    shipping_fee=dhl_products_shipping_fee(rate_response_data),
+                ),
             )
 
             db.session.add(log)
@@ -304,14 +386,6 @@ def dhl_create_label():
     except Exception as e:
         db.session.rollback()
 
-
-    dhl_payload = dhl_request_helper(
-        data, reference_code, "create", ordered_product_id="EXP"
-    )
-
-    error_response = invalid_warehouse_response(data, dhl_payload)
-    if error_response:
-        return error_response
 
     # DHL create label endpoint çağrısı (shipping/v4/label?format=PNG)
     status_code, response_data = dhl_request(
@@ -340,6 +414,11 @@ def dhl_create_label():
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
                 response=response_value,
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    shipping_fee=dhl_products_shipping_fee(rate_response_data),
+                ),
             )
 
             db.session.add(log)
@@ -392,7 +471,7 @@ def dhl_create_label():
 
     # DB işlemlerinde ve hata durumunda kullanmak için
     # DHL bilgileri response değiştirilmeden önce alınıyor.
-    response_to_return["orderedProductId"] = "EXP"
+    response_to_return["orderedProductId"] = service_code
     shipment_id = label.get("packageId")
     tracking_number = label.get("dhlPackageId")
 
@@ -429,6 +508,11 @@ def dhl_create_label():
             reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
             status="success",
             response=response_value,
+            **shipment_log_fields(
+                data,
+                carrier_id=carrier_id,
+                shipping_fee=dhl_orijinal_rate,
+            ),
         )
 
         db.session.add(log)
@@ -462,7 +546,7 @@ def dhl_create_label():
                 customer_phone=data.get("shipTo", {}).get("phoneNumber"),
                 shipment_id=shipment_id,
                 carrier="DHL",
-                service="EXP",
+                service=service_code,
                 tracking_number=tracking_number,
                 amz_cost=Decimal(str(dhl_orijinal_rate)),
                 my_cost=Decimal(str(round(mapped_rate, 2)))
@@ -508,6 +592,11 @@ def dhl_create_label():
                     "dhlResponse": response_value,
                     "databaseError": str(e)
                 }),
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    shipping_fee=dhl_orijinal_rate,
+                ),
             )
 
             db.session.add(recovery_log)
@@ -583,6 +672,7 @@ def dhl_cancel_label():
 
     label = None
     label_id = None
+    carrier_id = None
 
     if not is_test_label:
         label = Label.query.filter_by(shipment_id=shipment_id, client_id=client_id).first()
@@ -595,8 +685,26 @@ def dhl_cancel_label():
 
         pickup_id = label.pickup_id
         label_id = label.id
+        carrier_id = resolve_carrier_id(label.service, "domestic")
+        log_data = {
+            **data,
+            "shipTo": {
+                **(data.get("shipTo") or {}),
+                "postalCode": label.to_zip,
+            },
+            "shipFrom": {
+                **(data.get("shipFrom") or {}),
+                "postalCode": label.from_zip,
+            },
+        }
+        if not log_data.get("packages") and label.weight is not None:
+            log_data["packages"] = [{"weight": {"value": label.weight}}]
+        log_shipping_fee = label.amz_cost
     else:
         pickup_id = shipment_id
+        carrier_id = resolve_carrier_id(data.get("orderedProductId"), "domestic")
+        log_data = data
+        log_shipping_fee = None
 
     # DHL DELETE çağrısı sırasında MySQL bağlantısını açık tutma.
     release_db_connection()
@@ -636,7 +744,12 @@ def dhl_cancel_label():
             action="dhl_cancel_label TEST" if is_test_label else "dhl_cancel_label",
             reference_id=shipment_id,
             status="success" if status_code in (200, 204) else "failed",
-            response=str(response_data)
+            response=str(response_data),
+            **shipment_log_fields(
+                log_data,
+                carrier_id=carrier_id,
+                shipping_fee=log_shipping_fee,
+            ),
         )
         db.session.add(log)
         db.session.commit()
@@ -723,7 +836,11 @@ def dhl_create_manifest():
             action="dhl_create_manifest",
             reference_id=str(response_data.requestId),
             status="success",
-            response=str(response_data)
+            response=str(response_data),
+            **shipment_log_fields(
+                data,
+                warehouse_zip_code=from_postal_code,
+            ),
         )
 
         db.session.add(log)
@@ -814,7 +931,11 @@ def dhl_download_manifest():
             action="dhl_download_manifest",
             reference_id=request_id,
             status="success" if status_code == 200 else "failed",
-            response=str(record)
+            response=str(record),
+            **shipment_log_fields(
+                data,
+                warehouse_zip_code=from_postal_code,
+            ),
         )
 
         db.session.add(log)

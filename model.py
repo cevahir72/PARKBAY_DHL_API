@@ -136,6 +136,7 @@ class Commission(db.Model):
     shipping_rate = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     libre_rate = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"), nullable=False, index=True)
+    active = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
 
     client = db.relationship("Client", backref="commissions")
     carrier = db.relationship("Carrier", backref="commissions")
@@ -166,6 +167,10 @@ class ShipmentLog(db.Model):
     warehouse_zip_code = db.Column(db.String(20), nullable=True)
     customs_fee = db.Column(db.Numeric(10, 2), nullable=True)
     shipping_fee = db.Column(db.Numeric(10, 2), nullable=True)
+    length = db.Column(db.Numeric(10, 2), nullable=True)
+    width = db.Column(db.Numeric(10, 2), nullable=True)
+    height = db.Column(db.Numeric(10, 2), nullable=True)
+    weight = db.Column(db.Numeric(10, 2), nullable=True)
 
     client = db.relationship("Client", backref="shipment_logs")
     carrier = db.relationship("Carrier", backref="shipment_logs")

@@ -2,6 +2,7 @@ from flask_app import app, db, client_token_required
 from flask import request, jsonify, g, render_template, send_file
 from flask_login import login_required, current_user
 from model import ShipmentLog, Label, InternationalLabel, Client
+from shipment_log_helper import shipment_log_fields
 import time
 import requests
 from amazon_service import get_amazon_token
@@ -179,6 +180,7 @@ def rate_label():
             reference_id=response_data.get("payload", {}).get("requestToken"),
             status="success" if status_code == 200 else "failed",
             response=response_value,
+            **shipment_log_fields(data),
         )
 
         db.session.add(log)
@@ -290,6 +292,7 @@ def create_label():
             reference_id=response_data.get("payload", {}).get("shipmentId"),
             status="success" if status_code == 200 else "failed",
             response=response_value,
+            **shipment_log_fields(data),
         )
 
         db.session.add(log)
@@ -363,6 +366,7 @@ def cancel_label():
         ]}), 400
 
     is_test_label = data.get("isTestLabel", False)
+    log_data = dict(data)
 
     if not is_test_label:
         label = Label.query.filter_by(shipment_id=shipment_id).first()
@@ -377,6 +381,8 @@ def cancel_label():
         # Label update
         label.status = "refunded"
         label.refunded_at = datetime.utcnow()
+        if not log_data.get("packages") and label.weight is not None:
+            log_data["packages"] = [{"weight": {"value": label.weight}}]
 
         db.session.commit()
 
@@ -393,7 +399,8 @@ def cancel_label():
             action="cancel_label TEST" if is_test_label else "cancel_label",
             reference_id=data.get("reference_id"),
             status="success" if status_code==200 else "failed",
-            response=str(response_data)
+            response=str(response_data),
+            **shipment_log_fields(log_data),
         )
         db.session.add(log)
         db.session.commit()

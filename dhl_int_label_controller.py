@@ -1,6 +1,12 @@
 from flask_app import app, db, client_token_required
 from flask import request, jsonify, g
 from model import ShipmentLog, InternationalLabel
+from shipment_log_helper import (
+    dhl_products_shipping_fee,
+    get_client_commission,
+    resolve_carrier_id,
+    shipment_log_fields,
+)
 import time
 import requests
 from data_helper import (
@@ -36,12 +42,7 @@ def check_rate_limit(client):
 
 
 # 🔹 ULUSLARARASI ETİKET FİYAT FARKI
-# Sabit 4$ her etikete eklenir. Ayrıca ağırlık farkı: ilk 1 lb (1 lb dahil)
-# 0.60 $, 1 lb'den sonra başlayan her lb için +0.60 $.
-# Örnek: 5$ DHL + 4$ sabit + 1 lb için 0.60 $ = 9.60 $
-#         5$ DHL + 4$ sabit + 2.3 lb için 1.20 $ = 10.20 $
-INT_FIXED_MARKUP = 4.0
-INT_MARKUP_PER_LB = 0.60
+# Sabit ve libre bazlı komisyonlar müşteri/carrier komisyon kaydından alınır.
 _OZ_PER_LB = 16.0
 _LB_PER_KG = 2.2046226218
 
@@ -66,12 +67,11 @@ def weight_in_lb(weight):
     return value
 
 
-def calculate_int_markup(weight_lb):
+def calculate_int_markup(weight_lb, shipping_rate, libre_rate):
     """
     Ağırlığa göre uluslararası etiket fiyat farkını hesaplar.
 
-    Sabit 4$ + ağırlık farkı. Ağırlık farkı: ilk 1 lb 0.60 $;
-    sonrasında her tam lb için 0.60 $ eklenir.
+    Müşterinin sabit komisyonu ile libre başı komisyonunu toplar.
     2.3 lb -> 4.00 + 1.20 = 5.20 $, 3.4 lb -> 4.00 + 1.80 = 5.80 $
     """
     try:
@@ -83,17 +83,29 @@ def calculate_int_markup(weight_lb):
     if pounds > 0:
         # 2.3 lb -> 2, 3.4 lb -> 3; minimum 1 lb
         billable_lb = max(1, int(pounds))
-        weight_markup = billable_lb * INT_MARKUP_PER_LB
+        weight_markup = billable_lb * float(libre_rate)
 
-    return round(INT_FIXED_MARKUP + weight_markup, 2)
+    return round(float(shipping_rate) + weight_markup, 2)
 
 
-def int_markup_for_packages(packages):
-    """İstekteki paket ağırlığına göre farkı (2$ sabit dahil) döndürür."""
+def int_markup_for_packages(packages, shipping_rate, libre_rate):
+    """Komisyon tablosundaki sabit ve libre bazlı ücretleri toplar."""
     if not packages:
-        return INT_FIXED_MARKUP
+        return round(float(shipping_rate), 2)
 
-    return calculate_int_markup(weight_in_lb(packages[0].get("weight")))
+    return calculate_int_markup(
+        weight_in_lb(packages[0].get("weight")),
+        shipping_rate,
+        libre_rate,
+    )
+
+
+def missing_commission_response():
+    return jsonify({"errors": [{
+        "code": "CommissionNotConfigured",
+        "details": "No active commission is configured for this client and carrier. Contact the administrator.",
+        "message": "Carrier commission is not configured or is inactive"
+    }]}), 409
 
 
 # 🔹 DHL REQUEST (mevcut dhl_request fonksiyonunu kullanabiliriz, endpoint değiştireceğiz)
@@ -147,7 +159,7 @@ def dhl_int_request(endpoint, payload=None, method="POST", is_test=False, params
 def dhl_int_rate_label():
     """
     DHL International Direct - Rate alma endpoint'i.
-    Gelen DHL fiyatına 4$ sabit + ağırlığa göre fiyat farkı ekleyip döner
+    Gelen DHL fiyatına müşteri komisyon kaydındaki sabit ve libre ücretlerini ekleyip döner
     (DB ile kıyaslama YOK). Ayrıca Easyship'ten hesaplanan gümrük vergisi
     toplam_cost alanına eklenir. Ağırlık farkı: ilk 1 lb 0.60 $,
     sonraki her lb +0.60 $.
@@ -168,8 +180,6 @@ def dhl_int_rate_label():
     # istemci bilgilerini al ve oturumu serbest bırak.
     client_id = client.id
     reference_code = client.reference_code
-    release_db_connection()
-
     data = request.json or {}
     normalize_package_weights(data)
 
@@ -223,9 +233,17 @@ def dhl_int_rate_label():
             "message": "Invalid warehouse zip code"
         }]}), 400
 
+    carrier_id = resolve_carrier_id("PLT", "international")
+    commission = get_client_commission(client_id, carrier_id)
+    if commission is None:
+        return missing_commission_response()
+    shipping_commission = float(commission.shipping_rate)
+    libre_commission = float(commission.libre_rate)
+
     # DHL International rate payload hazırla
     dhl_payload = dhl_int_request_helper(data, reference_code, "rate")
 
+    release_db_connection()
     is_test_label = data.get("isTestLabel", False)
 
     # DHL International Rate endpoint çağrısı
@@ -239,6 +257,8 @@ def dhl_int_rate_label():
 
     response_value = None
     response_to_return = response_data
+    customs_fee = None
+    shipping_fee = None
 
     # 📦 LOG ve Yanıtı Düzenleme
     try:
@@ -257,9 +277,14 @@ def dhl_int_rate_label():
 
                 if total_charge is not None:
                     total_charge = float(total_charge)
+                    shipping_fee = total_charge
 
-                    # 🎯 DB KIYASLAMASI YOK - 4$ sabit + ağırlık farkı ekle
-                    markup = int_markup_for_packages(packages)
+                    # 🎯 DB kıyaslaması yok; müşteri komisyonu eklenir.
+                    markup = int_markup_for_packages(
+                        packages,
+                        shipping_commission,
+                        libre_commission,
+                    )
                     final_rate = round(total_charge + markup, 2)
 
                     # Orijinal tutar log için sakla (response'a EKLEME)
@@ -298,6 +323,7 @@ def dhl_int_rate_label():
                         }
 
                     if easyship_result.get("success"):
+                        customs_fee = easyship_result["total"]
                         total_cost = round(
                             final_rate + float(easyship_result["total"]), 2
                         )
@@ -345,6 +371,12 @@ def dhl_int_rate_label():
             reference_id=response_data.get("pickup") or response_data.get("quoteId"),
             status="success" if status_code == 200 else "failed",
             response=response_value,
+            **shipment_log_fields(
+                data,
+                carrier_id=carrier_id,
+                customs_fee=customs_fee,
+                shipping_fee=shipping_fee,
+            ),
         )
 
         db.session.add(log)
@@ -364,7 +396,7 @@ def dhl_int_create_label():
     """
     DHL International Direct - Label oluşturma endpoint'i.
     1. Önce rate alır (shipping/v4/rates)
-    2. 4$ sabit + ağırlık farkı ekler (ilk 1 lb 0.60 $, sonraki her lb +0.60 $)
+    2. Müşteri komisyon kaydındaki sabit ve libre ücretlerini ekler.
     3. Sonra label oluşturur (shipping/v4/label)
     """
     client = g.client
@@ -383,7 +415,6 @@ def dhl_int_create_label():
     # açık tutmamak için istemci bilgilerini al ve oturumu serbest bırak.
     client_id = client.id
     reference_code = client.reference_code
-    release_db_connection()
 
     data = request.json or {}
     normalize_package_weights(data)
@@ -451,11 +482,19 @@ def dhl_int_create_label():
             "message": "Missing customs items"
         }]}), 400
 
+    carrier_id = resolve_carrier_id("PLT", "international")
+    commission = get_client_commission(client_id, carrier_id)
+    if commission is None:
+        return missing_commission_response()
+    shipping_commission = float(commission.shipping_rate)
+    libre_commission = float(commission.libre_rate)
+
     is_test_label = data.get("isTestLabel", False)
 
     # 🔸 ADIM 1: Rate al
     rate_payload = dhl_int_request_helper(data, reference_code, "rate")
 
+    release_db_connection()
     rate_status_code, rate_response_data = dhl_int_request(
         endpoint="shipping/v4/products",  # International rates endpoint
         payload=rate_payload,
@@ -481,8 +520,12 @@ def dhl_int_create_label():
                     total_charge = float(total_charge)
                     dhl_original_rate = round(total_charge, 2)
 
-                    # 🎯 4$ SABİT + AĞIRLIK FARKI - DB kıyaslaması YOK
-                    markup = int_markup_for_packages(packages)
+                    # 🎯 DB kıyaslaması yok; müşteri komisyonu eklenir.
+                    markup = int_markup_for_packages(
+                        packages,
+                        shipping_commission,
+                        libre_commission,
+                    )
                     final_rate = round(total_charge + markup, 2)
 
                     if "rate" in first_item:
@@ -497,8 +540,13 @@ def dhl_int_create_label():
                 client_id=client_id,
                 action="dhl_int_rate_label TEST" if is_test_label else "dhl_int_rate_label",
                 reference_id=rate_response_data.get("pickup") or rate_response_data.get("quoteId"),
-                status="success" if rate_status_code == 200 else "failed",
+                status="failed",
                 response=response_value,
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    shipping_fee=dhl_products_shipping_fee(rate_response_data),
+                ),
             )
 
             db.session.add(log)
@@ -611,6 +659,12 @@ def dhl_int_create_label():
                 reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
                 status="failed",
                 response=response_value,
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    customs_fee=customs_value,
+                    shipping_fee=dhl_original_rate,
+                ),
             )
 
             db.session.add(log)
@@ -716,6 +770,12 @@ def dhl_int_create_label():
             reference_id=dhl_payload.get("packageDetail", {}).get("packageId"),
             status="success",
             response=response_value,
+            **shipment_log_fields(
+                data,
+                carrier_id=carrier_id,
+                customs_fee=customs_value,
+                shipping_fee=dhl_original_rate,
+            ),
         )
 
         db.session.add(log)
@@ -811,6 +871,12 @@ def dhl_int_create_label():
                     "dhlResponse": response_value,
                     "databaseError": str(e)
                 }),
+                **shipment_log_fields(
+                    data,
+                    carrier_id=carrier_id,
+                    customs_fee=customs_value,
+                    shipping_fee=dhl_original_rate,
+                ),
             )
 
             db.session.add(recovery_log)
@@ -884,6 +950,7 @@ def dhl_int_cancel_label():
     label_id = None
     dhl_package_id = data.get("dhlPackageId")
     pickup_id = data.get("pickupId")
+    carrier_id = resolve_carrier_id("PLT", "international")
 
     if not is_test_label:
         label = InternationalLabel.query.filter_by(
@@ -899,9 +966,30 @@ def dhl_int_cancel_label():
             pickup_id = pickup_id or label.pickup_id
             dhl_package_id = dhl_package_id or label.tracking_number
             label_id = label.id
+            carrier_id = resolve_carrier_id(label.service or "PLT", "international")
+            log_data = {
+                **data,
+                "shipTo": {
+                    **(data.get("shipTo") or {}),
+                    "postalCode": label.to_zip,
+                    "countryCode": label.to_country,
+                },
+                "shipFrom": {
+                    **(data.get("shipFrom") or {}),
+                    "postalCode": label.from_zip,
+                },
+            }
+            if not log_data.get("packages") and label.weight is not None:
+                log_data["packages"] = [{"weight": {"value": label.weight}}]
+            log_customs_fee = label.customs_value
+            log_shipping_fee = label.amz_cost
         elif not (pickup_id and dhl_package_id):
             # Kayıt yoksa iptal için gerekli DHL kimlikleri istekte verilmelidir
             return jsonify({"success": False, "message": "Label not found"}), 404
+    else:
+        log_data = data
+        log_customs_fee = None
+        log_shipping_fee = None
 
     if not pickup_id:
         return jsonify({
@@ -1011,7 +1099,13 @@ def dhl_int_cancel_label():
                 action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
                 reference_id=shipment_id,
                 status="cancelled_local",
-                response=str(attempts)
+                response=str(attempts),
+                **shipment_log_fields(
+                    log_data,
+                    carrier_id=carrier_id,
+                    customs_fee=log_customs_fee,
+                    shipping_fee=log_shipping_fee,
+                ),
             )
             db.session.add(log)
             db.session.commit()
@@ -1040,7 +1134,13 @@ def dhl_int_cancel_label():
                 action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
                 reference_id=shipment_id,
                 status="failed",
-                response=str(attempts)
+                response=str(attempts),
+                **shipment_log_fields(
+                    log_data,
+                    carrier_id=carrier_id,
+                    customs_fee=log_customs_fee,
+                    shipping_fee=log_shipping_fee,
+                ),
             )
             db.session.add(log)
             db.session.commit()
@@ -1078,7 +1178,13 @@ def dhl_int_cancel_label():
             action="dhl_int_cancel_label TEST" if is_test_label else "dhl_int_cancel_label",
             reference_id=shipment_id,
             status="success",
-            response=str(attempts)
+            response=str(attempts),
+            **shipment_log_fields(
+                log_data,
+                carrier_id=carrier_id,
+                customs_fee=log_customs_fee,
+                shipping_fee=log_shipping_fee,
+            ),
         )
         db.session.add(log)
         db.session.commit()

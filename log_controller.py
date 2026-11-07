@@ -1,4 +1,6 @@
-from flask import render_template, request
+from datetime import datetime, timedelta
+
+from flask import abort, render_template, request
 from flask_login import login_required
 from sqlalchemy.orm import joinedload
 
@@ -18,6 +20,25 @@ def admin_shipment_logs():
 
     client_id = request.args.get("client_id", type=int)
     carrier_id = request.args.get("carrier_id", type=int)
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+
+    try:
+        start_datetime = (
+            datetime.strptime(start_date, "%Y-%m-%d")
+            if start_date
+            else None
+        )
+        end_datetime = (
+            datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            if end_date
+            else None
+        )
+    except ValueError:
+        abort(400, description="Dates must use YYYY-MM-DD format.")
+
+    if start_datetime and end_datetime and start_datetime >= end_datetime:
+        abort(400, description="Start date must be on or before end date.")
 
     query = ShipmentLog.query.options(
         joinedload(ShipmentLog.client),
@@ -27,6 +48,10 @@ def admin_shipment_logs():
         query = query.filter(ShipmentLog.client_id == client_id)
     if carrier_id is not None:
         query = query.filter(ShipmentLog.carrier_id == carrier_id)
+    if start_datetime:
+        query = query.filter(ShipmentLog.created_at >= start_datetime)
+    if end_datetime:
+        query = query.filter(ShipmentLog.created_at < end_datetime)
 
     pagination = query.order_by(
         ShipmentLog.created_at.desc(),
@@ -42,4 +67,6 @@ def admin_shipment_logs():
         carriers=Carrier.query.order_by(Carrier.name).all(),
         selected_client_id=client_id,
         selected_carrier_id=carrier_id,
+        selected_start_date=start_date,
+        selected_end_date=end_date,
     )

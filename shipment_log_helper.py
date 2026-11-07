@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func
 
@@ -35,6 +35,7 @@ def get_client_commission(client_id, carrier_id):
     return Commission.query.filter_by(
         client_id=client_id,
         carrier_id=carrier_id,
+        active=True,
     ).first()
 
 
@@ -71,6 +72,30 @@ def shipment_log_fields(
         "warehouse_zip_code": normalized_zip or source_zip,
         "carrier_id": carrier_id,
     }
+
+    packages = data.get("packages")
+    package = (
+        packages[0]
+        if isinstance(packages, list) and packages and isinstance(packages[0], dict)
+        else {}
+    )
+    dimensions = package.get("dimensions")
+    dimensions = dimensions if isinstance(dimensions, dict) else {}
+    weight = package.get("weight") or {}
+    measurements = {
+        "length": dimensions.get("length"),
+        "width": dimensions.get("width"),
+        "height": dimensions.get("height"),
+        "weight": weight.get("value") if isinstance(weight, dict) else weight,
+    }
+    for field, value in measurements.items():
+        if value is not None:
+            try:
+                decimal_value = Decimal(str(value))
+                if decimal_value.is_finite():
+                    fields[field] = decimal_value
+            except (InvalidOperation, TypeError, ValueError):
+                pass
 
     for field, value in (
         ("customs_fee", customs_fee),

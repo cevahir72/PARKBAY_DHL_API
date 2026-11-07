@@ -9,7 +9,7 @@
 
 <form method="GET" action="{{ url_for('admin_shipment_logs') }}" class="card card-body mb-3">
   <div class="row g-3 align-items-end">
-    <div class="col-md-4">
+    <div class="col-md-3">
       <label for="client-filter" class="form-label">Client</label>
       <select id="client-filter" name="client_id" class="form-select">
         <option value="">All clients</option>
@@ -21,7 +21,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
       <label for="carrier-filter" class="form-label">Carrier</label>
       <select id="carrier-filter" name="carrier_id" class="form-select">
         <option value="">All carriers</option>
@@ -32,6 +32,16 @@
         </option>
         {% endfor %}
       </select>
+    </div>
+    <div class="col-md-2">
+      <label for="start-date" class="form-label">Başlangıç tarihi</label>
+      <input id="start-date" type="date" name="start_date" class="form-control"
+             value="{{ selected_start_date }}">
+    </div>
+    <div class="col-md-2">
+      <label for="end-date" class="form-label">Bitiş tarihi</label>
+      <input id="end-date" type="date" name="end_date" class="form-control"
+             value="{{ selected_end_date }}">
     </div>
     <div class="col-md-2">
       <label for="per-page" class="form-label">Per page</label>
@@ -57,11 +67,14 @@
           <th>Client</th>
           <th>Carrier</th>
           <th>Reference</th>
-          <th>Status</th>
           <th>Destination</th>
           <th>Warehouse ZIP</th>
           <th>Customs Fee</th>
           <th>Shipping Fee</th>
+          <th>Length</th>
+          <th>Width</th>
+          <th>Height</th>
+          <th>Weight</th>
           <th>Response</th>
         </tr>
       </thead>
@@ -75,7 +88,6 @@
             {{ log.action or "—" }}<br>
             <small>{{ log.reference_id or "—" }}</small>
           </td>
-          <td>{{ log.status or "—" }}</td>
           <td>
             {{ log.zip_code or "—" }}<br>
             <small>{{ log.city or "" }}{% if log.city and log.country %}, {% endif %}{{ log.country or "" }}</small>
@@ -83,6 +95,10 @@
           <td>{{ log.warehouse_zip_code or "—" }}</td>
           <td>{{ log.customs_fee if log.customs_fee is not none else "—" }}</td>
           <td>{{ log.shipping_fee if log.shipping_fee is not none else "—" }}</td>
+          <td>{{ log.length if log.length is not none else "—" }}</td>
+          <td>{{ log.width if log.width is not none else "—" }}</td>
+          <td>{{ log.height if log.height is not none else "—" }}</td>
+          <td>{{ log.weight if log.weight is not none else "—" }}</td>
           <td>
             {% if log.response %}
             <details>
@@ -95,7 +111,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="text-center">Henüz log kaydı yok.</td></tr>
+        <tr><td colspan="13" class="text-center">Henüz log kaydı yok.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -105,13 +121,13 @@
 <nav aria-label="Shipment logs pages" class="mt-3">
   <ul class="pagination justify-content-center">
     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-      <a class="page-link" href="{{ url_for('admin_shipment_logs', page=pagination.prev_num, per_page=per_page, client_id=selected_client_id, carrier_id=selected_carrier_id) if pagination.has_prev else '#' }}">Önceki</a>
+      <a class="page-link" href="{{ url_for('admin_shipment_logs', page=pagination.prev_num, per_page=per_page, client_id=selected_client_id, carrier_id=selected_carrier_id, start_date=selected_start_date, end_date=selected_end_date) if pagination.has_prev else '#' }}">Önceki</a>
     </li>
     <li class="page-item disabled">
       <span class="page-link">{{ pagination.page }} / {{ pagination.pages or 1 }}</span>
     </li>
     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-      <a class="page-link" href="{{ url_for('admin_shipment_logs', page=pagination.next_num, per_page=per_page, client_id=selected_client_id, carrier_id=selected_carrier_id) if pagination.has_next else '#' }}">Sonraki</a>
+      <a class="page-link" href="{{ url_for('admin_shipment_logs', page=pagination.next_num, per_page=per_page, client_id=selected_client_id, carrier_id=selected_carrier_id, start_date=selected_start_date, end_date=selected_end_date) if pagination.has_next else '#' }}">Sonraki</a>
     </li>
   </ul>
 </nav>

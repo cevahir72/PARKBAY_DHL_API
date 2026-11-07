@@ -140,6 +140,7 @@ def admin_add_commission(client_id):
         carrier_id=carrier.id,
         shipping_rate=shipping_rate,
         libre_rate=libre_rate,
+        active=True,
     )
     db.session.add(commission)
     try:
@@ -183,6 +184,31 @@ def admin_edit_commission(client_id, commission_id):
         return redirect(url_for("admin_clients"))
 
     flash(f"{client.username} için {carrier.name} komisyonu güncellendi.", "success")
+    return redirect(url_for("admin_clients"))
+
+
+@app.route(
+    "/admin/client/<int:client_id>/commissions/<int:commission_id>/active",
+    methods=["POST"],
+)
+@login_required
+@role_required("admin")
+def admin_toggle_commission(client_id, commission_id):
+    client = Client.query.get_or_404(client_id)
+    commission = Commission.query.filter_by(
+        id=commission_id,
+        client_id=client.id,
+    ).first_or_404()
+
+    active_values = request.form.getlist("active")
+    if active_values not in ([], ["true"]):
+        flash("Invalid commission status.", "danger")
+        return redirect(url_for("admin_clients"))
+
+    commission.active = active_values == ["true"]
+    db.session.commit()
+    state = "aktif" if commission.active else "pasif"
+    flash(f"{client.username} için {commission.carrier.name} komisyonu {state}.", "success")
     return redirect(url_for("admin_clients"))
 
 
