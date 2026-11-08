@@ -15,15 +15,13 @@ from data_helper import (
     warehouse_value,
     PICKUP_DICT,
     DISTRIBUTION_CENTERS,
+    DHL_SPECIAL_COUNTRIES,
 )
 from db_helpers import release_db_connection
 from dhl_service import get_dhl_token
 from easyship_service import calculate_for_dhl_request, public_error
 from decimal import Decimal
 from datetime import datetime
-
-
-dhl_special_countries = ["JP", "BR", "SG", "AU", "GB", "IN"]
 
 
 # 🔹 RATE LIMIT (mevcut ile aynı)
@@ -486,7 +484,7 @@ def dhl_int_create_label():
             "message": "Missing customs items"
         }]}), 400
 
-    if destination_country in dhl_special_countries:
+    if destination_country in DHL_SPECIAL_COUNTRIES:
         missing_sku_items = [
             f"package {package_index + 1}, item {item_index + 1}"
             for package_index, package in enumerate(packages)

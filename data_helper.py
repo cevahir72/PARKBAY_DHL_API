@@ -30,6 +30,8 @@ DISTRIBUTION_CENTERS = {
     "75006-2527": "USDFW1",
 }
 
+DHL_SPECIAL_COUNTRIES = frozenset({"JP", "BR", "SG", "AU", "GB", "IN"})
+
 
 def normalize_zip(postal_code):
     """
@@ -506,6 +508,10 @@ def dhl_int_request_helper(client_json, client_id, r_type):
 
     # ===== CUSTOMS DETAILS - ROOT SEVİYESİ (DHL Schema'ya uygun) =====
     customs_details = []
+    destination_country = str(
+        client_json.get("shipTo", {}).get("countryCode") or ""
+    ).strip().upper()
+    requires_sku_number = destination_country in DHL_SPECIAL_COUNTRIES
     for package in client_json.get("packages", []):
         for item in package.get("items", []):
             # Her item için customsDetails entry'si oluştur
@@ -514,6 +520,8 @@ def dhl_int_request_helper(client_json, client_id, r_type):
                 customs_entry = {}
                 add_if(customs_entry, "itemDescription", item.get("description"))
                 add_if(customs_entry, "packagedQuantity", item.get("quantity", 1))
+                if requires_sku_number:
+                    add_if(customs_entry, "skuNumber", item.get("skuNumber"))
                 add_if(customs_entry, "itemValue", item_value)  # NUMBER, not object
                 add_if(customs_entry, "currency", item.get("itemValue", {}).get("unit", "USD"))
                 add_if(customs_entry, "countryOfOrigin", item.get("originCountry"))
