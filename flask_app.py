@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file, g
 from functools import wraps
 from flask_login import current_user, login_required, login_user, LoginManager, logout_user, UserMixin
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from model import db, Client, RequestLog, login_manager
 import time
 
@@ -144,6 +144,18 @@ def ping():
 @app.template_filter('datetime_from_timestamp')
 def datetime_from_timestamp_filter(timestamp):
     return datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H:%M:%S')
+
+
+@app.template_filter("turkey_datetime")
+def turkey_datetime_filter(value):
+    if value is None:
+        return ""
+
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    turkey_timezone = timezone(timedelta(hours=3))
+    return value.astimezone(turkey_timezone).strftime("%Y-%m-%d %H:%M")
 
 
 from user_controller import *

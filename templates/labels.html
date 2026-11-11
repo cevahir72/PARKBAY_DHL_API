@@ -142,6 +142,17 @@
                     >
                 </div>
 
+                <div class="col-md-2">
+                    <label class="form-label">End Date</label>
+
+                    <input
+                        type="date"
+                        name="end_date"
+                        class="form-control form-control-sm"
+                        value="{{ filters.end_date or '' }}"
+                    >
+                </div>
+
                 <!-- Sayfa başına kayıt sayısı -->
                 <div class="col-md-2">
                     <label class="form-label">Rows</label>
@@ -186,8 +197,12 @@
             <hr>
 
             <!-- Label Tablosu -->
-            <div class="table-responsive">
-                <table class="table table-hover table-sm">
+            <div class="label-table-scroll-group">
+                <div class="label-table-scroll-top" aria-label="Scroll table horizontally">
+                    <div></div>
+                </div>
+                <div class="table-responsive label-table-scroll">
+                    <table class="table table-hover table-sm label-wide-table">
                     <thead class="table-light">
                         <tr>
                             <th>#</th>
@@ -195,6 +210,8 @@
                             <th>Client</th>
                             <th>Carrier/Service</th>
                             <th>Tracking Number</th>
+                            <th>shipment_id</th>
+                            <th>dsp_mail_identifier</th>
                             <th>Market</th>
                             <th>From</th>
                             <th>To</th>
@@ -217,7 +234,7 @@
                             </td>
 
                             <td>
-                                {{ label.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                {{ label.created_at|turkey_datetime }}
                             </td>
 
                             <td>
@@ -235,6 +252,9 @@
                             <td>
                                 <code>{{ label.tracking_number }}</code>
                             </td>
+
+                            <td><code>{{ label.shipment_id or '' }}</code></td>
+                            <td><code>{{ label.dsp_mail_identifier or '' }}</code></td>
 
                             <td>{{ label.market_place }}</td>
                             <td>{{ label.from_zip }}</td>
@@ -261,7 +281,7 @@
                     <!-- Toplam Satırları -->
                     <tfoot class="table-secondary font-weight-bold">
                         <tr>
-                            <td colspan="9" class="text-end">
+                            <td colspan="11" class="text-end">
                                 Page Total:
                             </td>
 
@@ -277,7 +297,7 @@
                         </tr>
 
                         <tr class="table-dark">
-                            <td colspan="9" class="text-end">
+                            <td colspan="11" class="text-end">
                                 Filtered Grand Total
                                 ({{ pagination.total }} labels):
                             </td>
@@ -293,7 +313,8 @@
                             <td></td>
                         </tr>
                     </tfoot>
-                </table>
+                    </table>
+                </div>
             </div>
 
             <!-- Pagination -->

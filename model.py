@@ -145,7 +145,7 @@ class Commission(db.Model):
 class ShipmentLog(db.Model):
     __tablename__ = "shipment_logs"
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.now)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     client_id = db.Column(db.Integer, db.ForeignKey("clients.id"))
     carrier_id = db.Column(db.Integer, db.ForeignKey("carrier.id"), nullable=True)
 
@@ -240,7 +240,7 @@ class Label(db.Model):
     __tablename__ = "labels"
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.now)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False)
 
@@ -251,6 +251,7 @@ class Label(db.Model):
     service = db.Column(db.String(100))          # Ground, Priority vb
 
     tracking_number = db.Column(db.String(255))
+    dsp_mail_identifier = db.Column(db.String(255))
 
     market_place = db.Column(db.String(50))
     reference_code = db.Column(db.String(50))
@@ -276,7 +277,7 @@ class InternationalLabel(db.Model):
     __tablename__ = "international_labels"
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.now)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
 

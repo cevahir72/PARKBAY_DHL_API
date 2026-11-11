@@ -66,6 +66,7 @@
           <th>ID / Created</th>
           <th>Client</th>
           <th>Carrier</th>
+          <th>Status</th>
           <th>Reference</th>
           <th>Destination</th>
           <th>Warehouse ZIP</th>
@@ -81,9 +82,18 @@
       <tbody>
         {% for log in logs %}
         <tr>
-          <td>{{ log.id }}<br><small>{{ log.created_at }}</small></td>
+          <td>{{ log.id }}<br><small>{{ log.created_at|turkey_datetime }}</small></td>
           <td>{{ log.client.username if log.client else log.client_id or "—" }}</td>
           <td>{{ log.carrier.name if log.carrier else "—" }}</td>
+          <td>
+            {% if log.status %}
+            <span class="badge {% if log.status == 'success' %}bg-success{% elif log.status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+              {{ log.status }}
+            </span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
           <td>
             {{ log.action or "—" }}<br>
             <small>{{ log.reference_id or "—" }}</small>
@@ -111,7 +121,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="13" class="text-center">Henüz log kaydı yok.</td></tr>
+        <tr><td colspan="14" class="text-center">Henüz log kaydı yok.</td></tr>
         {% endfor %}
       </tbody>
     </table>

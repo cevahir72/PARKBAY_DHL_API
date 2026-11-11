@@ -303,6 +303,25 @@ p {
   background-color: rgba(0,0,0,0.2);
   border-radius: 4px;
 }
+
+.label-table-scroll-top {
+  width: 100%;
+  height: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 4px;
+}
+
+.label-table-scroll-top > div {
+  height: 1px;
+}
+
+.label-wide-table {
+  width: max-content;
+  min-width: 100%;
+  white-space: nowrap;
+}
+
 .orders-box {
   flex: 1;              /* kalan alanı kapla */
   overflow: auto;       /* yatay + dikey scroll */
@@ -411,4 +430,3 @@ p {
   border: none;
   cursor: pointer;
 }
-

@@ -474,6 +474,7 @@ def dhl_create_label():
     response_to_return["orderedProductId"] = service_code
     shipment_id = label.get("packageId")
     tracking_number = label.get("dhlPackageId")
+    dsp_mail_identifier = label.get("trackingId")
 
     # Kullanıcıya dönecek response hazırlanıyor.
     response_to_return.pop("pickup", None)
@@ -548,6 +549,7 @@ def dhl_create_label():
                 carrier="DHL",
                 service=service_code,
                 tracking_number=tracking_number,
+                dsp_mail_identifier=dsp_mail_identifier,
                 amz_cost=Decimal(str(dhl_orijinal_rate)),
                 my_cost=Decimal(str(round(mapped_rate, 2)))
             )

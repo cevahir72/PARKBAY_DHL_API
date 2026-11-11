@@ -155,6 +155,37 @@
             }
         });
     </script>
+    <script>
+        document.querySelectorAll(".label-table-scroll-group").forEach(group => {
+            const topScroll = group.querySelector(".label-table-scroll-top");
+            const tableScroll = group.querySelector(".label-table-scroll");
+            const table = tableScroll.querySelector("table");
+            const spacer = topScroll.firstElementChild;
+            let syncing = false;
+
+            const updateScrollWidth = () => {
+                spacer.style.width = `${table.scrollWidth}px`;
+                topScroll.scrollLeft = tableScroll.scrollLeft;
+            };
+
+            topScroll.addEventListener("scroll", () => {
+                if (syncing) return;
+                syncing = true;
+                tableScroll.scrollLeft = topScroll.scrollLeft;
+                syncing = false;
+            });
+
+            tableScroll.addEventListener("scroll", () => {
+                if (syncing) return;
+                syncing = true;
+                topScroll.scrollLeft = tableScroll.scrollLeft;
+                syncing = false;
+            });
+
+            window.addEventListener("resize", updateScrollWidth);
+            updateScrollWidth();
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 
